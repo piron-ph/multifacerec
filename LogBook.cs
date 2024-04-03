@@ -20,6 +20,11 @@ using System.Data;
 using System.Text.RegularExpressions;
 using CRUD_Class.myclass;
 using MySql.Data.MySqlClient;
+using DlibDotNet;
+using DlibDotNet.Extensions;
+using System.Windows.Media.Media3D;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 
 namespace MultiFaceRec
 {
@@ -27,16 +32,17 @@ namespace MultiFaceRec
     {
         string finalname;
         Image<Bgr, Byte> currentFrame;
-        public Emgu.CV.Capture grabber;
-        HaarCascade face;
-        MCvFont font = new MCvFont(FONT.CV_FONT_HERSHEY_TRIPLEX, 0.6d, 0.6d);
+        VideoCapture grabber;
+        CascadeClassifier face;
         Image<Gray, byte> result;
         Image<Gray, byte> gray = null;
         List<Image<Gray, byte>> trainingImages = new List<Image<Gray, byte>>();
+        DlibDotNet.Rectangle roi = new DlibDotNet.Rectangle(255, 0, 0, 2);
         List<string> labels = new List<string>();
         List<string> NamePersons = new List<string>();
         int ContTrain, t;
         string name, names = null;
+
 
         int i = 0;
         string timein;
@@ -64,22 +70,10 @@ namespace MultiFaceRec
         string full_name = "";
 
         //CONNECTION
-        MySqlConnection connection = new MySqlConnection("datasource = localhost;port = 3306; Initial Catalog = 'e_log1'; username = root; password=");
-        MySqlConnection connection2 = new MySqlConnection("datasource = localhost;port = 3306; Initial Catalog = 'e_log1'; username = root; password=");
+        MySqlConnection connection = new MySqlConnection("datasource=localhost;port=3306;Initial Catalog=e_log1;username=root;password=");
+        MySqlConnection connection2 = new MySqlConnection("datasource=localhost;port=3306;Initial Catalog=e_log1;username=root;password=");
         MySqlDataReader drr;
         MySqlDataReader drr2;
-
-        //INITIALIZE OTHER FORM
-        CRUD crud = new CRUD();
-
-        //Temperature
-        private SerialPort myport;
-        private string data;
-
-        FilterInfoCollection filter_collection;
-        VideoCaptureDevice video_capture_device;
-
-        SpeechSynthesizer synth = new SpeechSynthesizer();
 
         public LogBook()
         {
@@ -94,8 +88,13 @@ namespace MultiFaceRec
                 main_timer.Start();
                 date_today.Text = DateTime.Now.ToString("MMM dd yyy");
 
+                FontFace fontFace = FontFace.HersheyTriplex;
+                double fontScale = 0.6d;
+                MCvScalar fontColor = new MCvScalar(255, 255, 255); // Assuming white color
+                int thickness = 1;
+
                 //Load haarcascades for face detection
-                face = new HaarCascade("haarcascade_frontalface_default.xml");
+                face = new CascadeClassifier("haarcascade_frontalface_default.xml");
 
                 string qry = "SELECT Username, Image_name FROM face_enrollment_tb";
                 MySqlCommand cmd = new MySqlCommand(qry, connection2);
@@ -126,6 +125,9 @@ namespace MultiFaceRec
 
         string logbook_date = DateTime.Now.ToString("MMM dd yyy");
         Review_Logbook review_logbook = new Review_Logbook();
+        private IEnumerable<FilterInfo> filter_collection;
+        private VideoCaptureDevice video_capture_device;
+        private DlibDotNet.Rectangle faceRect;
 
         List<string> ComPortNames(String VID, String PID)
         {
@@ -156,6 +158,7 @@ namespace MultiFaceRec
 
         private void LogBook_Load(object sender, EventArgs e)
         {
+
             try
             {
                 this.AutoScroll = true;
@@ -181,7 +184,7 @@ namespace MultiFaceRec
                 connection2.Close();
 
                 //CAPTURE DEVICES
-                filter_collection = new FilterInfoCollection(FilterCategory.VideoInputDevice);
+                FilterInfoCollection filter_collection = new FilterInfoCollection(FilterCategory.VideoInputDevice);
                 foreach (FilterInfo filter_info in filter_collection)
                 {
                     video_src_cmbx.Items.Add(filter_info.Name);
@@ -293,12 +296,153 @@ namespace MultiFaceRec
                 dr1.Close();
                 connection.Close();
             }
-            
+
 
             catch (Exception ex)
             {
                 MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
+        }
+        private bool IsLiveFunction(Emgu.CV.Image<Emgu.CV.Structure.Bgr, byte> currentFrame, DlibDotNet.Rectangle faceRect)
+        {
+            bool isLive = false;
+
+            try
+            {
+                System.Drawing.Rectangle emguRect = new System.Drawing.Rectangle((int)faceRect.Left, (int)faceRect.Top, (int)faceRect.Width, (int)faceRect.Height);
+
+                // Convert the current frame to grayscale
+                Emgu.CV.Image<Emgu.CV.Structure.Gray, byte> grayFrame = currentFrame.Convert<Emgu.CV.Structure.Gray, byte>();
+
+                // Extract region of interest (ROI) from the current frame using the face rectangle
+                Emgu.CV.Image<Emgu.CV.Structure.Gray, byte> faceImage = grayFrame.Copy(emguRect);
+
+                double ear = CalculateEyeAspectRatio(faceImage);
+                double blinkThreshold = 0.2;
+                bool blinkingDetected = ear < blinkThreshold;
+                DlibDotNet.Rectangle dlibRect = new DlibDotNet.Rectangle(emguRect.Left, emguRect.Top, emguRect.Right, emguRect.Bottom);
+                bool headMovementDetected = DetectHeadMovement(grayFrame, dlibRect);
+
+
+
+                // Determine if the face is live based on the results of blinking and head movement detection
+                isLive = blinkingDetected && headMovementDetected;
+            }
+            catch (Exception ex)
+            {
+                // Handle exceptions
+                Console.WriteLine($"Error in IsLiveFunction: {ex.Message}");
+            }
+
+            return isLive;
+        }
+
+
+        private bool DetectBlinking(Image<Gray, byte> currentFrame)
+        {
+            double ear = CalculateEyeAspectRatio(currentFrame);
+            double blinkThreshold = 0.2;
+            bool isBlink = ear < blinkThreshold;
+            return isBlink;
+        }
+
+        private double CalculateEyeAspectRatio(Image<Gray, byte> currentFrame)
+        {
+            PointF p1 = new PointF(0, 0);// Left eye inner corner
+            PointF p2 = new PointF(0, 0);// Left eye outer corner
+            PointF p3 = new PointF(0, 0);// Right eye inner corner
+            PointF p4 = new PointF(0, 0);// Right eye outer corner
+            PointF p5 = new PointF(0, 0);// Left eye top
+            PointF p6 = new PointF(0, 0);// Left eye bottom
+
+            double d1 = Math.Sqrt(Math.Pow(p2.X - p6.X, 2) + Math.Pow(p2.Y - p6.Y, 2));
+            double d2 = Math.Sqrt(Math.Pow(p3.X - p5.X, 2) + Math.Pow(p3.Y - p5.Y, 2));
+            double d3 = Math.Sqrt(Math.Pow(p1.X - p4.X, 2) + Math.Pow(p1.Y - p4.Y, 2));
+
+            double ear = (d1 + d2) / (2 * d3);
+            return ear;
+        }
+
+
+        private bool DetectHeadMovement(Image<Gray, byte> currentFrame, DlibDotNet.Rectangle roi)
+        {
+            bool isHeadMoved = false;
+
+            try
+            {
+                // Convert Emgu.CV image to System.Drawing.Bitmap
+                Bitmap bitmap = currentFrame.ToBitmap();
+
+                // Convert System.Drawing.Bitmap to DlibDotNet.Array2D<byte>
+                DlibDotNet.Array2D<byte> dlibImage = BitmapToDlibArray2D(bitmap);
+
+                // Load shape predictor model
+                var shapePredictorModelFilePath = "shape_predictor_68_face_landmarks.dat";
+                var shapePredictor = ShapePredictor.Deserialize(shapePredictorModelFilePath);
+
+                // Detect facial landmarks within the ROI
+                var shape = shapePredictor.Detect(dlibImage, roi);
+
+                // Convert DlibDotNet.Point to System.Drawing.PointF
+                var nosePoint = ToPointF(shape.GetPart(30));
+                var leftEyePoint = ToPointF(shape.GetPart(36));
+                var rightEyePoint = ToPointF(shape.GetPart(45));
+                var mouthPoint = ToPointF(shape.GetPart(66));
+
+                // Calculate angles between facial landmarks
+                double angleEyesNose = CalculateAngleBetweenPoints(nosePoint, leftEyePoint, rightEyePoint);
+                double angleEyesMouth = CalculateAngleBetweenPoints(mouthPoint, leftEyePoint, rightEyePoint);
+                double angleThreshold = 15;
+
+                // Check if head movement exceeds the threshold
+                if (angleEyesNose > angleThreshold || angleEyesMouth > angleThreshold)
+                {
+                    isHeadMoved = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Handle exceptions here
+                Console.WriteLine($"Error in DetectHeadMovement: {ex.Message}");
+            }
+
+            return isHeadMoved;
+        }
+
+        // Helper method to convert Bitmap to DlibDotNet.Array2D<byte>
+        private DlibDotNet.Array2D<byte> BitmapToDlibArray2D(Bitmap bitmap)
+        {
+            // Convert Bitmap to byte array
+            System.Drawing.Rectangle rect = new System.Drawing.Rectangle(0, 0, bitmap.Width, bitmap.Height);
+            BitmapData bmpData = bitmap.LockBits(rect, ImageLockMode.ReadOnly, bitmap.PixelFormat);
+            int numBytes = bmpData.Stride * bitmap.Height;
+            byte[] imageData = new byte[numBytes];
+            Marshal.Copy(bmpData.Scan0, imageData, 0, numBytes);
+            bitmap.UnlockBits(bmpData);
+
+            // Convert byte array to DlibDotNet.Array2D<byte>
+            DlibDotNet.Array2D<byte> dlibImage = DlibDotNet.Dlib.LoadImageData<byte>(imageData, (uint)bitmap.Height, (uint)bitmap.Width, (uint)bmpData.Stride);
+
+            return dlibImage;
+        }
+
+
+
+
+        private System.Drawing.PointF ToPointF(DlibDotNet.Point dlibPoint)
+        {
+            return new System.Drawing.PointF((float)dlibPoint.X, (float)dlibPoint.Y);
+        }
+        private double CalculateAngleBetweenPoints(PointF centerPoint, PointF point1, PointF point2)
+        {
+            double angleRadians = Math.Atan2(point2.Y - centerPoint.Y, point2.X - centerPoint.X) -
+                                  Math.Atan2(point1.Y - centerPoint.Y, point1.X - centerPoint.X);
+            double angleDegrees = angleRadians * (180 / Math.PI);
+            if (angleDegrees < 0)
+            {
+                angleDegrees += 360;
+            }
+            return angleDegrees;
         }
 
         private void login_timer_Tick(object sender, EventArgs e)
@@ -306,12 +450,15 @@ namespace MultiFaceRec
             try
             {
                 pwede_na_magout = false;
-                if (!string.IsNullOrEmpty(identified_name_lbl.Text))
+                if (!string.IsNullOrEmpty(identified_name_lbl.Text) )
                 {
 
                     //----------------------------TIMEIN 1------------------------
                     bool checkuser = false;
                     int face_detected = Convert.ToInt32(face_detected_lbl.Text);
+                    currentFrame = grabber.QueryFrame().ToImage<Bgr, byte>();
+                    CvInvoke.Resize(currentFrame, currentFrame, new Size(320, 240), 0, 0, Inter.Cubic);
+                    bool isLive = IsLiveFunction(currentFrame, faceRect);
                     string querry = "SELECT Username, Date, Time_In FROM logbook_tb";
                     MySqlCommand cmd = new MySqlCommand(querry, connection);
                     if (connection.State != ConnectionState.Open)
@@ -331,10 +478,28 @@ namespace MultiFaceRec
                     connection.Close();
 
 
-                    if (checkuser == false && !string.IsNullOrEmpty(lname.Text) && (face_detected == 1) && (DateTime.Parse(time_login.Text, CultureInfo.InvariantCulture) < DateTime.Parse("11:59 AM", CultureInfo.InvariantCulture)))
+                    if (checkuser == false && !string.IsNullOrEmpty(lname.Text) && (face_detected == 1 && isLive) && (DateTime.Parse(time_login.Text, CultureInfo.InvariantCulture) < DateTime.Parse("11:59 AM", CultureInfo.InvariantCulture)))
                     {
+                        MessageBox.Show("Blink once and move your head to log in.", "Instructions", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
                         LOGIN();
                         READ_RECORD();
+                    }
+                    else
+                    {
+                        // If blinking or head movement is not detected
+                        DialogResult result = MessageBox.Show("Failed to detect real face. Would you like to try again?", "Error", MessageBoxButtons.RetryCancel, MessageBoxIcon.Error); ;
+
+                        if (result == DialogResult.Retry)
+                        {
+                            // Retry
+                            login_timer_Tick(sender, e);
+                        }
+                        else
+                        {
+                            // Exit
+                            Application.Exit();
+                        }
                     }
 
                     //----------------------------TIMEOUT 1 ------------------------
@@ -411,8 +576,9 @@ namespace MultiFaceRec
                     // LOGOUT 1
                     if (check1 == true)
                     {
-                        if ((checkuser == true && pwede_na_magout == true) && (!string.IsNullOrEmpty(lname.Text) && face_detected == 1) && (DateTime.Parse(time_login.Text, CultureInfo.InvariantCulture) >= DateTime.Parse(set_timeout, CultureInfo.InvariantCulture)) && (DateTime.Parse(time_login.Text, CultureInfo.InvariantCulture) <= DateTime.Parse("11:59 AM", CultureInfo.InvariantCulture)))
+                        if ((checkuser == true && pwede_na_magout == true) && (!string.IsNullOrEmpty(lname.Text) && face_detected == 1 && isLive) && (DateTime.Parse(time_login.Text, CultureInfo.InvariantCulture) >= DateTime.Parse(set_timeout, CultureInfo.InvariantCulture)) && (DateTime.Parse(time_login.Text, CultureInfo.InvariantCulture) <= DateTime.Parse("11:59 AM", CultureInfo.InvariantCulture)))
                         {
+                            MessageBox.Show("Blink once and move your head to log in.", "Instructions", MessageBoxButtons.OK, MessageBoxIcon.Information);
                             LOGOUT();
                             READ_RECORD();
                         }
@@ -456,22 +622,69 @@ namespace MultiFaceRec
                     connection.Close();
 
                     //LOGIN 2 
-                    if (!string.IsNullOrEmpty(lname.Text) && (face_detected == 1) && (DateTime.Parse(time_login.Text, CultureInfo.InvariantCulture) >= DateTime.Parse("12:00 PM", CultureInfo.InvariantCulture)))
+                    if (!string.IsNullOrEmpty(lname.Text) && (face_detected == 1 && isLive) && (DateTime.Parse(time_login.Text, CultureInfo.InvariantCulture) >= DateTime.Parse("12:00 PM", CultureInfo.InvariantCulture)))
                     {
                         LOGIN2();
                         READ_RECORD();
+                    }
+                    else
+                    {
+                        // If blinking or head movement is not detected
+                        DialogResult result = MessageBox.Show("Failed to detect real face. Would you like to try again?", "Error", MessageBoxButtons.RetryCancel, MessageBoxIcon.Error); ;
+
+                        if (result == DialogResult.Retry)
+                        {
+                            // Retry
+                            login_timer_Tick(sender, e);
+                        }
+                        else
+                        {
+                            // Exit
+                            Application.Exit();
+                        }
                     }
 
                     //----------------------------TIMEOUT 2------------------------
                     if (check2 == true)
                     {
-                        if ((may_login_2 == true && pwede_na_magout2 == true) && (!string.IsNullOrEmpty(lname.Text) && face_detected == 1) && (DateTime.Parse(time_login.Text, CultureInfo.InvariantCulture) >= DateTime.Parse(set_timeout2, CultureInfo.InvariantCulture)) && (DateTime.Parse(time_login.Text, CultureInfo.InvariantCulture) > DateTime.Parse("12:00 PM", CultureInfo.InvariantCulture)))
+                        if ((may_login_2 == true && pwede_na_magout2 == true) && (!string.IsNullOrEmpty(lname.Text) && face_detected == 1 && isLive) && (DateTime.Parse(time_login.Text, CultureInfo.InvariantCulture) >= DateTime.Parse(set_timeout2, CultureInfo.InvariantCulture)) && (DateTime.Parse(time_login.Text, CultureInfo.InvariantCulture) > DateTime.Parse("12:00 PM", CultureInfo.InvariantCulture)))
                         {
                             LOGOUT2();
                             READ_RECORD();
                         }
                     }
+                    else
+                    {
+                        // If blinking or head movement is not detected
+                        DialogResult result = MessageBox.Show("Failed to detect real face. Would you like to try again?", "Error", MessageBoxButtons.RetryCancel, MessageBoxIcon.Error); ;
 
+                        if (result == DialogResult.Retry)
+                        {
+                            // Retry
+                            login_timer_Tick(sender, e);
+                        }
+                        else
+                        {
+                            // Exit
+                            Application.Exit();
+                        }
+                    }
+
+                }
+                else
+                {
+                    // User not recognized or not in database
+                    DialogResult result = MessageBox.Show("You don't exist in the system or in the database, this could be an error, please try again or exit", "Error", MessageBoxButtons.RetryCancel, MessageBoxIcon.Error);
+                    if (result == DialogResult.Retry)
+                    {
+                        // Retry
+                        login_timer_Tick(sender, e);
+                    }
+                    else
+                    {
+                        // Exit
+                        Application.Exit();
+                    }
                 }
             }
 
@@ -522,6 +735,8 @@ namespace MultiFaceRec
                 dash_age.Text = age_txbx.Text;
                 gender_lbl.Text = gender.Text;
 
+                CrudNamespace.myclass crud = new CrudNamespace.myclass();
+
                 crud.username = username.Text;
                 crud.lname = lname.Text;
                 crud.fname = fname.Text;
@@ -567,6 +782,9 @@ namespace MultiFaceRec
                         dash_municipality.Text = municiplty.Text;
                         dash_brgy.Text = brgy.Text;
                         dash_time_in_2.Text = time_login.Text;
+
+                        CrudNamespace.myclass crud = new CrudNamespace.myclass();
+                        crud.username = username.Text;
 
                         crud.username = username.Text;
                         crud.lname = lname.Text;
@@ -802,22 +1020,24 @@ namespace MultiFaceRec
         {
             try
             {
-                    //Temperature Timer
-                    temp_timer.Stop();
+                // Temperature Timer
+                temp_timer.Stop();
 
-                    Cursor.Current = Cursors.WaitCursor;
-                    //Initialize the capture device
-                    grabber = new Emgu.CV.Capture(num_of_device_cmbx.SelectedIndex);
-                    grabber.SetCaptureProperty(Emgu.CV.CvEnum.CAP_PROP.CV_CAP_PROP_FPS, 400);
-                    grabber.SetCaptureProperty(Emgu.CV.CvEnum.CAP_PROP.CV_CAP_PROP_FRAME_HEIGHT, 240);
-                    grabber.SetCaptureProperty(Emgu.CV.CvEnum.CAP_PROP.CV_CAP_PROP_FRAME_WIDTH, 320);
-                    grabber.QueryFrame();
-                    //Initialize the FrameGraber event
-                    Application.Idle += new EventHandler(FrameGrabber);
-                    enable_btn.Enabled = false;
-                    num_of_device_cmbx.Enabled = false;
-                    enable_lbl.ForeColor = Color.LightGray;
-                
+                Cursor.Current = Cursors.WaitCursor;
+
+                // Initialize the capture device
+                grabber = new VideoCapture(num_of_device_cmbx.SelectedIndex);
+                grabber.Set(CapProp.Fps, 400);
+                grabber.Set(CapProp.FrameHeight, 240);
+                grabber.Set(CapProp.FrameWidth, 320);
+                grabber.QueryFrame();
+
+                // Initialize the FrameGrabber event
+                grabber.ImageGrabbed += new EventHandler(OnImageGrabbed);
+
+                enable_btn.Enabled = false;
+                num_of_device_cmbx.Enabled = false;
+                enable_lbl.ForeColor = Color.LightGray;
             }
             catch (Exception ex)
             {
@@ -959,7 +1179,8 @@ namespace MultiFaceRec
 
         private void button1_Click(object sender, EventArgs e)
         {
-            try {
+            try
+            {
                 grabber.QueryFrame(); Application.Idle -= FrameGrabber; grabber.Dispose();
                 enable_btn.Enabled = true;
                 enable_lbl.ForeColor = Color.White;
@@ -996,11 +1217,11 @@ namespace MultiFaceRec
         {
             if (check_monitor == false)
             {
-                panel2.Size = new Size(635, 44);
-                label12.Location = new Point(405, 21);
-                groupBox4.Size = new Size(635, 605);
-                label11.Location = new Point(255, 15);
-                record_dgv.Size = new Size(610, 553);
+                panel2.Size = new System.Drawing.Size(635, 44);
+                label12.Location = new System.Drawing.Point(405, 21);
+                groupBox4.Size = new System.Drawing.Size(635, 605);
+                label11.Location = new System.Drawing.Point(255, 15);
+                record_dgv.Size = new System.Drawing.Size(610, 553);
                 record_dgv.Visible = false;
                 groupBox_a.Visible = true;
                 groupBox_b.Visible = true;
@@ -1021,11 +1242,11 @@ namespace MultiFaceRec
             }
             else
             {
-                panel2.Size = new Size(415, 44);
-                label12.Location = new Point(295, 21);
-                groupBox4.Size = new Size(415, 337);
-                label11.Location = new Point(154, 15);
-                record_dgv.Size = new Size(377, 282);
+                panel2.Size = new System.Drawing.Size(415, 44);
+                label12.Location = new System.Drawing.Point(295, 21);
+                groupBox4.Size = new System.Drawing.Size(415, 337);
+                label11.Location = new System.Drawing.Point(154, 15);
+                record_dgv.Size = new System.Drawing.Size(377, 282);
                 record_dgv.Visible = true;
                 groupBox_a.Visible = false;
                 groupBox_b.Visible = false;
@@ -1045,9 +1266,7 @@ namespace MultiFaceRec
                 clock_grpbx.Visible = false;
                 check_monitor = false;
             }
-
         }
-
         void FrameGrabber(object sender, EventArgs e)
         {
             try
@@ -1055,63 +1274,58 @@ namespace MultiFaceRec
                 face_detected_lbl.Text = "0";
                 NamePersons.Add("");
 
+                // Get the current frame from the capture device
+                Emgu.CV.Image<Emgu.CV.Structure.Bgr, byte> currentFrame = grabber.QueryFrame().Resize(320, 240, Emgu.CV.CvEnum.INTER.CV_INTER_CUBIC);
 
-                //Get the current frame form capture device
-                currentFrame = grabber.QueryFrame().Resize(320, 240, Emgu.CV.CvEnum.INTER.CV_INTER_CUBIC);
+                // Convert it to Grayscale
+                Emgu.CV.Image<Emgu.CV.Structure.Gray, byte> gray = currentFrame.Convert<Emgu.CV.Structure.Gray, byte>();
 
-                //Convert it to Grayscale
-                gray = currentFrame.Convert<Gray, Byte>();
+                // Face Detector
+                MCvAvgComp[][] facesDetected = gray.DetectHaarCascade(face, 1.2, 15, Emgu.CV.CvEnum.HAAR_DETECTION_TYPE.DO_CANNY_PRUNING, new Size(30, 30));
 
-                //Face Detector
-                MCvAvgComp[][] facesDetected = gray.DetectHaarCascade(
-              face,
-              1.2,
-              15,
-              Emgu.CV.CvEnum.HAAR_DETECTION_TYPE.DO_CANNY_PRUNING,
-              new Size(30, 30));
-
-                //Action for each element detected
+                // Action for each element detected
                 foreach (MCvAvgComp f in facesDetected[0])
                 {
                     t = t + 1;
-                    result = currentFrame.Copy(f.rect).Convert<Gray, byte>().Resize(100, 100, Emgu.CV.CvEnum.INTER.CV_INTER_CUBIC);
-                    //draw the face detected in the 0th (gray) channel with light green color
+                    Emgu.CV.Image<Emgu.CV.Structure.Gray, byte> result = gray.Copy(f.rect).Resize(100, 100, Emgu.CV.CvEnum.INTER.CV_INTER_CUBIC);
+                    // Draw the face detected in the 0th (gray) channel with light green color
                     currentFrame.Draw(f.rect, new Bgr(Color.LightGreen), 2);
 
+                    // Check if the face is live
+                    DlibDotNet.Rectangle dlibRect = new DlibDotNet.Rectangle(f.rect.Left, f.rect.Top, f.rect.Right, f.rect.Bottom);
+                    bool isLive = IsLiveFunction(currentFrame, dlibRect);
 
                     if (trainingImages.ToArray().Length != 0)
                     {
-
-                        //TermCriteria for face recognition with numbers of trained images like maxIteration
+                        // TermCriteria for face recognition with numbers of trained images like maxIteration
                         MCvTermCriteria termCrit = new MCvTermCriteria(ContTrain, 0.001);
 
-                        //Eigen face recognizer
+                        // Eigen face recognizer
                         EigenObjectRecognizer recognizer = new EigenObjectRecognizer(
-                           trainingImages.ToArray(),
-                           labels.ToArray(),
-                           3000,
-                           ref termCrit);
+                            trainingImages.ToArray(),
+                            labels.ToArray(),
+                            3000,
+                            ref termCrit);
 
-                        name = recognizer.Recognize(result);
+                        string name = recognizer.Recognize(result);
 
                         finalname = name;
-                        //Draw the label for each face detected and recognized
+                        // Draw the label for each face detected and recognized
                         if (string.IsNullOrEmpty(name))
                         {
-                            currentFrame.Draw(string.IsNullOrEmpty(name) ? "Unknown" : name, ref font, new Point(f.rect.X - 2, f.rect.Y - 2), new Bgr(Color.Red));
+                            currentFrame.Draw(string.IsNullOrEmpty(name) ? "Unknown" : name, ref font, new System.Drawing.Point(f.rect.X - 2, f.rect.Y - 2), new Bgr(Color.Red));
                         }
                         else
                         {
-                            currentFrame.Draw(name, ref font, new Point(f.rect.X - 2, f.rect.Y - 2), new Bgr(Color.Lime));
+                            currentFrame.Draw(name, ref font, new System.Drawing.Point(f.rect.X - 2, f.rect.Y - 2), new Bgr(Color.Lime));
                         }
                     }
 
-                        NamePersons[t - 1] = name;
-                        NamePersons.Add("");
+                    NamePersons[t - 1] = name;
+                    NamePersons.Add("");
 
                     //Set the number of faces detected on the scene
-                    face_detected_lbl.Text = facesDetected[0].Length.ToString();    
-
+                    face_detected_lbl.Text = facesDetected[0].Length.ToString();
                 }
                 t = 0;
 
@@ -1123,7 +1337,7 @@ namespace MultiFaceRec
                 //Show the faces procesed and recognized
                 imageBoxFrameGrabber.Image = currentFrame;
                 identified_name_lbl.Text = names;
-                if(string.IsNullOrEmpty(identified_name_lbl.Text))
+                if (string.IsNullOrEmpty(identified_name_lbl.Text))
                 {
                     lname.Clear();
                     fname.Clear();
@@ -1145,6 +1359,6 @@ namespace MultiFaceRec
                 MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
 
-        } 
+        }
     }
 }

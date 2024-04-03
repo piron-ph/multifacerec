@@ -19,6 +19,7 @@ namespace MultiFaceRec
         bool check;
         int loginAttempts = 0;
         DateTime cooldownEndTime;
+        bool systemLocked = false;
 
         public Login()
         {
@@ -31,20 +32,35 @@ namespace MultiFaceRec
             {
                 Cursor.Current = Cursors.WaitCursor;
                 check = false;
-                string querry = "Select Username, Password from security_tb";
-                MySqlCommand cmd = new MySqlCommand(querry, connection);
-                if (connection.State != ConnectionState.Open)
+
+                if (systemLocked)
                 {
-                    connection.Open();
-                }
-                MySqlDataReader dr = cmd.ExecuteReader();
-                while (dr.Read())
-                {
-                    if (username_txbx.Text == (dr["Username"].ToString()) && password_txbx.Text == (dr["Password"].ToString()))
+                    if (username_txbx.Text == "admin" && password_txbx.Text == "admin")
                     {
                         check = true;
+                        systemLocked = false; // Unlocking the system
+                    }
+                }
+                else
+                {
+                    string querry = "Select Username, Password from security_tb";
+                    MySqlCommand cmd = new MySqlCommand(querry, connection);
+                    if (connection.State != ConnectionState.Open)
+                    {
+                        connection.Open();
+                    }
+                    MySqlDataReader dr = cmd.ExecuteReader();
+                    while (dr.Read())
+                    {
+                        if (username_txbx.Text == (dr["Username"].ToString()) && password_txbx.Text == (dr["Password"].ToString()))
+                        {
+                            check = true;
+                        }
+
                     }
 
+                    dr.Close();
+                    connection.Close();
                 }
 
                 if (check)
@@ -53,21 +69,34 @@ namespace MultiFaceRec
                 }
                 else
                 {
-                    loginAttempts++;
-                    if (loginAttempts >= 5)
+                    if (systemLocked)
                     {
-                        cooldownEndTime = DateTime.Now.AddMinutes(5);
-                        MessageBox.Show("Wrong password, please try again within 5 minutes", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        loginAttempts = 0; // will reset the login attempts after cooldown ends
+                        MessageBox.Show("System is locked. Use admin credentials to unlock.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
                     else
                     {
-                        MessageBox.Show("Invalid username or password!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        loginAttempts++;
+                        if (loginAttempts >= 5)
+                        {
+                            cooldownEndTime = DateTime.Now.AddMinutes(5);
+                            MessageBox.Show("Wrong password, please try again within 5 minutes", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            loginAttempts = 0; // Resetting login attempts after cooldown triggered
+                        }
+                        else if (loginAttempts > 5 && DateTime.Now < cooldownEndTime)
+                        {
+                            MessageBox.Show("Please wait for the cooldown period to finish.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                        else if (loginAttempts >= 3 && DateTime.Now > cooldownEndTime)
+                        {
+                            systemLocked = true;
+                            MessageBox.Show("System is locked. Use admin credentials to unlock.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                        else
+                        {
+                            MessageBox.Show("Invalid username or password!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
                     }
                 }
-
-                dr.Close();
-                connection.Close();
             }
             catch (Exception ex)
             {
@@ -77,7 +106,7 @@ namespace MultiFaceRec
 
         private void login_btn_Click(object sender, EventArgs e)
         {
-            if (DateTime.Now < cooldownEndTime)
+            if (DateTime.Now < cooldownEndTime && !systemLocked)
             {
                 MessageBox.Show("Please wait for the cooldown period to finish.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
@@ -101,7 +130,7 @@ namespace MultiFaceRec
         {
             if (e.KeyCode == Keys.Enter)
             {
-                if (DateTime.Now < cooldownEndTime)
+                if (DateTime.Now < cooldownEndTime && !systemLocked)
                 {
                     MessageBox.Show("Please wait for the cooldown period to finish.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }

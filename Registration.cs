@@ -32,9 +32,8 @@ namespace MultiFaceRec
     {
         string finalname;
         Image<Bgr, Byte> currentFrame;
-        Emgu.CV.Capture grabber;
-        HaarCascade face;
-        MCvFont font = new MCvFont(FONT.CV_FONT_HERSHEY_TRIPLEX, 0.6d, 0.6d);
+        VideoCapture grabber;
+        CascadeClassifier face;
         Image<Gray, byte> result1, TrainedFace = null;
         Image<Gray, byte> gray = null;
         List<Image<Gray, byte>> trainingImages = new List<Image<Gray, byte>>();
@@ -62,6 +61,83 @@ namespace MultiFaceRec
         bool check;
         string result;
 
+        //IsLiveFace FUNCTION
+        public bool IsLiveFace(Image<Gray, byte> faceImage)
+        {
+            // blink detection
+            bool isBlink = IsBlinkDetected(faceImage);
+            // headmovement detection
+            bool isHeadMoved = IsHeadMoved(faceImage);
+            // blink and head detection result =
+            bool isLive = isBlink && isHeadMoved;
+            return isLive;
+        }
+
+        // BLINK DETECTION
+        private bool IsBlinkDetected(Image<Gray, byte> faceImage)
+        {
+            double ear = CalculateEyeAspectRatio(faceImage);
+            double blinkThreshold = 0.2;
+            bool isBlink = ear < blinkThreshold;
+            return isBlink;
+        }
+
+        private double CalculateEyeAspectRatio(Image<Gray, byte> faceImage)
+        {
+            PointF p1 = new PointF(0, 0);// Left eye inner corner
+            PointF p2 = new PointF(0, 0);// Left eye outer corner
+            PointF p3 = new PointF(0, 0);// Right eye inner corner
+            PointF p4 = new PointF(0, 0);// Right eye outer corner
+            PointF p5 = new PointF(0, 0);// Left eye top
+            PointF p6 = new PointF(0, 0);// Left eye bottom
+
+            double d1 = Math.Sqrt(Math.Pow(p2.X - p6.X, 2) + Math.Pow(p2.Y - p6.Y, 2));
+            double d2 = Math.Sqrt(Math.Pow(p3.X - p5.X, 2) + Math.Pow(p3.Y - p5.Y, 2));
+            double d3 = Math.Sqrt(Math.Pow(p1.X - p4.X, 2) + Math.Pow(p1.Y - p4.Y, 2));
+
+            double ear = (d1 + d2) / (2 * d3);
+            return ear;
+        }
+
+
+        // HEADMOVEMENT DETECTION
+        private bool IsHeadMoved(Image<Gray, byte> faceImage)
+        {
+            bool isHeadMoved = false;
+
+            var shape = shapePredictor.Detect(faceImage);
+
+            var nosePoint = shape.GetPart(30);
+            var leftEyePoint = shape.GetPart(36);
+            var rightEyePoint = shape.GetPart(45);
+            var mouthPoint = shape.GetPart(66);
+
+            double angleEyesNose = CalculateAngleBetweenPoints(nosePoint, leftEyePoint, rightEyePoint);
+            double angleEyesMouth = CalculateAngleBetweenPoints(mouthPoint, leftEyePoint, rightEyePoint);
+            double angleTreshold = 15;
+
+            if (angleEyesNose > angleThreshold || angleEyesMouth > angleThreshold)
+            {
+                isHeadMoved = true;
+            }
+
+            return isHeadMoved;
+        }
+
+        private double CalculateAngleBetweenPoints(PointF centerPoint, PointF point1, PointF point2)
+        {
+            double angleRadians = Math.Atan2(point2.Y - centerPoint.Y, point2.X - centerPoint.X) -
+                                  Math.Atan2(point1.Y - centerPoint.Y, point1.X - centerPoint.X);
+            double angleDegrees = angleRadians * (180 / Math.PI);
+            if (angleDegrees < 0)
+            {
+                angleDegrees += 360;
+            }
+            return angleDegrees;
+        }
+
+
+
         public Registration()
         {
             try
@@ -70,6 +146,11 @@ namespace MultiFaceRec
                 //Disable capture button & list of names
                 capture_btn.Enabled = false;
                 names_cmbx.Enabled = false;
+
+                FontFace fontFace = FontFace.HersheyTriplex;
+                double fontScale = 0.6d;
+                MCvScalar fontColor = new MCvScalar(255, 255, 255); // Assuming white color
+                int thickness = 1;
 
                 //Load haarcascades for face detection
                 face = new HaarCascade("haarcascade_frontalface_default.xml");
@@ -169,7 +250,7 @@ namespace MultiFaceRec
                 Cursor.Current = Cursors.WaitCursor;
                 if (contact_txbx.Text.Length != 0)
                 {
-                   result = contact_txbx.Text.Substring(0, 2);
+                    result = contact_txbx.Text.Substring(0, 2);
                 }
                 else
                 {
@@ -192,7 +273,7 @@ namespace MultiFaceRec
                 {
                     MessageBox.Show("Age under 7 years old is not allowed! Please register a user atleast 7 years old and above!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
-                else if(contact_txbx.TextLength < 11 || result != "09")
+                else if (contact_txbx.TextLength < 11 || result != "09")
                 {
                     MessageBox.Show("Invalid contact number!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
@@ -202,7 +283,7 @@ namespace MultiFaceRec
                     CLEAR1();
                 }
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
@@ -230,10 +311,10 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                
+
             }
         }
-        
+
         public void CLEAR1()
         {
             try
@@ -286,7 +367,7 @@ namespace MultiFaceRec
                 brgy_txbx.AutoCompleteSource = AutoCompleteSource.CustomSource;
                 AutoCompleteStringCollection col = new AutoCompleteStringCollection();
 
-                string querry = "Select Barangay from barangay_tb WHERE Province='" + province_txbx.Text + "' AND Municipality='"+ municipality_txbx.Text + "'";
+                string querry = "Select Barangay from barangay_tb WHERE Province='" + province_txbx.Text + "' AND Municipality='" + municipality_txbx.Text + "'";
                 MySqlCommand cmd = new MySqlCommand(querry, connection);
                 connection.Open();
                 MySqlDataReader dr = cmd.ExecuteReader();
@@ -630,7 +711,21 @@ namespace MultiFaceRec
                     t = t + 1;
                     result1 = currentFrame.Copy(f.rect).Convert<Gray, byte>().Resize(100, 100, Emgu.CV.CvEnum.INTER.CV_INTER_CUBIC);
                     //draw the face detected in the 0th (gray) channel with light green color
+
                     currentFrame.Draw(f.rect, new Bgr(Color.LightGreen), 2);
+
+                    bool isLiveFace = IsLiveFace(result1);
+
+                    if (isLiveFace)
+                    {
+                        // Draw live face label in green color
+                        currentFrame.Draw("Live Face", ref font, new Point(f.rect.X - 2, f.rect.Y - 2), new Bgr(Color.Lime));
+                    }
+                    else
+                    {
+                        // Draw not live face label in red color
+                        currentFrame.Draw("Not Live Face", ref font, new Point(f.rect.X - 2, f.rect.Y - 2), new Bgr(Color.Red));
+                    }
 
 
                     if (trainingImages.ToArray().Length != 0)
@@ -683,6 +778,7 @@ namespace MultiFaceRec
             catch (Exception ex)
             {
                 MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
 
         }
