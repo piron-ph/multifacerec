@@ -119,15 +119,35 @@ namespace MultiFaceRec {
         
         [Browsable(false)]
         [DesignerSerializationVisibilityAttribute(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-        public virtual System.TimeSpan CacheTimeOut {
-            get {
+        public virtual TimeSpan CacheTimeOut
+        {
+            get
+            {
                 return CachedReportConstants.DEFAULT_TIMEOUT;
             }
-            set {
+            set
+            {
                 // 
             }
         }
-        
+
+        public class CachedReportConstants
+        {
+            public static readonly TimeSpan DEFAULT_TIMEOUT = TimeSpan.FromMinutes(30);
+        }
+
+        private CachedReportConstants cachedReportConstants;
+
+        public CachedReportConstants GetCachedReportConstants()
+        {
+            return cachedReportConstants;
+        }
+
+        private void SetCachedReportConstants(CachedReportConstants value)
+        {
+            cachedReportConstants = value;
+        }
+
         public virtual CrystalDecisions.CrystalReports.Engine.ReportDocument CreateReport() {
             CrystalReport1 rpt = new CrystalReport1();
             rpt.Site = this.Site;

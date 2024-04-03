@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Emgu.CV;
+using Emgu.CV.Face;
 using Emgu.CV.Structure;
 using Emgu.CV.CvEnum;
 using AForge.Video;
@@ -24,6 +25,10 @@ using System.Speech.Synthesis;
 using System.Globalization;
 using System.IO.Ports;
 using System.Windows.Forms;
+using Microsoft.Office.Interop.Excel;
+using System.Windows.Media;
+using System.Windows;
+using static Emgu.CV.Face.FaceRecognizer;
 
 
 namespace MultiFaceRec
@@ -34,6 +39,10 @@ namespace MultiFaceRec
         Image<Bgr, Byte> currentFrame;
         VideoCapture grabber;
         CascadeClassifier face;
+        Emgu.CV.CvEnum.FontFace fontFace = Emgu.CV.CvEnum.FontFace.HersheyTriplex;
+        double fontScale = 0.6d;
+        MCvScalar fontColor = new MCvScalar(255, 255, 255); // Assuming whiteSystem.Drawing.Color
+        int thickness = 1;
         Image<Gray, byte> result1, TrainedFace = null;
         Image<Gray, byte> gray = null;
         List<Image<Gray, byte>> trainingImages = new List<Image<Gray, byte>>();
@@ -61,83 +70,6 @@ namespace MultiFaceRec
         bool check;
         string result;
 
-        //IsLiveFace FUNCTION
-        public bool IsLiveFace(Image<Gray, byte> faceImage)
-        {
-            // blink detection
-            bool isBlink = IsBlinkDetected(faceImage);
-            // headmovement detection
-            bool isHeadMoved = IsHeadMoved(faceImage);
-            // blink and head detection result =
-            bool isLive = isBlink && isHeadMoved;
-            return isLive;
-        }
-
-        // BLINK DETECTION
-        private bool IsBlinkDetected(Image<Gray, byte> faceImage)
-        {
-            double ear = CalculateEyeAspectRatio(faceImage);
-            double blinkThreshold = 0.2;
-            bool isBlink = ear < blinkThreshold;
-            return isBlink;
-        }
-
-        private double CalculateEyeAspectRatio(Image<Gray, byte> faceImage)
-        {
-            PointF p1 = new PointF(0, 0);// Left eye inner corner
-            PointF p2 = new PointF(0, 0);// Left eye outer corner
-            PointF p3 = new PointF(0, 0);// Right eye inner corner
-            PointF p4 = new PointF(0, 0);// Right eye outer corner
-            PointF p5 = new PointF(0, 0);// Left eye top
-            PointF p6 = new PointF(0, 0);// Left eye bottom
-
-            double d1 = Math.Sqrt(Math.Pow(p2.X - p6.X, 2) + Math.Pow(p2.Y - p6.Y, 2));
-            double d2 = Math.Sqrt(Math.Pow(p3.X - p5.X, 2) + Math.Pow(p3.Y - p5.Y, 2));
-            double d3 = Math.Sqrt(Math.Pow(p1.X - p4.X, 2) + Math.Pow(p1.Y - p4.Y, 2));
-
-            double ear = (d1 + d2) / (2 * d3);
-            return ear;
-        }
-
-
-        // HEADMOVEMENT DETECTION
-        private bool IsHeadMoved(Image<Gray, byte> faceImage)
-        {
-            bool isHeadMoved = false;
-
-            var shape = shapePredictor.Detect(faceImage);
-
-            var nosePoint = shape.GetPart(30);
-            var leftEyePoint = shape.GetPart(36);
-            var rightEyePoint = shape.GetPart(45);
-            var mouthPoint = shape.GetPart(66);
-
-            double angleEyesNose = CalculateAngleBetweenPoints(nosePoint, leftEyePoint, rightEyePoint);
-            double angleEyesMouth = CalculateAngleBetweenPoints(mouthPoint, leftEyePoint, rightEyePoint);
-            double angleTreshold = 15;
-
-            if (angleEyesNose > angleThreshold || angleEyesMouth > angleThreshold)
-            {
-                isHeadMoved = true;
-            }
-
-            return isHeadMoved;
-        }
-
-        private double CalculateAngleBetweenPoints(PointF centerPoint, PointF point1, PointF point2)
-        {
-            double angleRadians = Math.Atan2(point2.Y - centerPoint.Y, point2.X - centerPoint.X) -
-                                  Math.Atan2(point1.Y - centerPoint.Y, point1.X - centerPoint.X);
-            double angleDegrees = angleRadians * (180 / Math.PI);
-            if (angleDegrees < 0)
-            {
-                angleDegrees += 360;
-            }
-            return angleDegrees;
-        }
-
-
-
         public Registration()
         {
             try
@@ -147,13 +79,8 @@ namespace MultiFaceRec
                 capture_btn.Enabled = false;
                 names_cmbx.Enabled = false;
 
-                FontFace fontFace = FontFace.HersheyTriplex;
-                double fontScale = 0.6d;
-                MCvScalar fontColor = new MCvScalar(255, 255, 255); // Assuming white color
-                int thickness = 1;
-
                 //Load haarcascades for face detection
-                face = new HaarCascade("haarcascade_frontalface_default.xml");
+                face = new CascadeClassifier("haarcascade_frontalface_default.xml");
 
                 string qry = "SELECT Username, Image_name FROM face_enrollment_tb ORDER BY ID ASC";
                 MySqlCommand cmd = new MySqlCommand(qry, connection2);
@@ -164,7 +91,7 @@ namespace MultiFaceRec
                 MySqlDataReader dr = cmd.ExecuteReader();
                 while (dr.Read())
                 {
-                    trainingImages.Add(new Image<Gray, byte>(Application.StartupPath + "/TrainedFaces/" + dr["Image_name"].ToString()));
+                    trainingImages.Add(new Image<Gray, byte>(System.Windows.Forms.Application.StartupPath + "/TrainedFaces/" + dr["Image_name"].ToString()));
                     labels.Add(dr["Username"].ToString());
                 }
                 dr.Close();
@@ -175,7 +102,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
 
         }
@@ -239,7 +166,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
 
@@ -267,15 +194,15 @@ namespace MultiFaceRec
                 birthdate = DOB.ToString("MMM dd yyy").ToUpper();
                 if (username_txbx.Text == "" || lname.Text == "" || fname.Text == "" || gender_combx.Text == "" || brgy_txbx.Text == "" || municipality_txbx.Text == "" || province_txbx.Text == "" || contact_txbx.Text == "" || combo_usertype.Text == "" || reg_date1.Text == "")
                 {
-                    MessageBox.Show("Incomplete Data! Please provide all the information needed!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    System.Windows.Forms.MessageBox.Show("Incomplete Data! Please provide all the information needed!", "Warning", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
                 }
                 else if (ages < 7)
                 {
-                    MessageBox.Show("Age under 7 years old is not allowed! Please register a user atleast 7 years old and above!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    System.Windows.Forms.MessageBox.Show("Age under 7 years old is not allowed! Please register a user atleast 7 years old and above!", "Warning", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
                 }
                 else if (contact_txbx.TextLength < 11 || result != "09")
                 {
-                    MessageBox.Show("Invalid contact number!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    System.Windows.Forms.MessageBox.Show("Invalid contact number!", "Warning", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
                 }
                 else
                 {
@@ -285,7 +212,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
 
@@ -332,7 +259,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
 
         }
@@ -354,7 +281,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
 
         }
@@ -382,7 +309,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
 
@@ -409,7 +336,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
 
@@ -436,7 +363,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
 
@@ -452,7 +379,7 @@ namespace MultiFaceRec
                 {
                     if (username_txbx.Text == (dr["Username"].ToString()))
                     {
-                        MessageBox.Show("Username is already exist!");
+                        System.Windows.Forms.MessageBox.Show("Username is already exist!");
                         int len = username_txbx.Text.Length;
                         int a = len - 1;
                         check = true;
@@ -464,7 +391,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
 
         }
@@ -482,7 +409,7 @@ namespace MultiFaceRec
 
                 if (!System.Text.RegularExpressions.Regex.IsMatch(username_txbx.Text, "^[a-zA-Z0-9]+$") && username_txbx.Text != "")
                 {
-                    MessageBox.Show("It only accepts alphabetical characters and numbers!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    System.Windows.Forms.MessageBox.Show("It only accepts alphabetical characters and numbers!", "Warning", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
                     username_txbx.Text = username_txbx.Text.Substring(0, username_txbx.Text.Length - 1);
                     username_txbx.SelectionStart = username_txbx.Text.Length;
                     username_txbx.SelectionLength = 0;
@@ -490,7 +417,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
 
@@ -500,7 +427,7 @@ namespace MultiFaceRec
             {
                 if (!System.Text.RegularExpressions.Regex.IsMatch(lname.Text, "^[a-zA-Z\\s]+$") && lname.Text != "")
                 {
-                    MessageBox.Show("It only accepts alphabetical characters!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    System.Windows.Forms.MessageBox.Show("It only accepts alphabetical characters!", "Warning", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
                     lname.Text = lname.Text.Substring(0, lname.Text.Length - 1);
                     lname.SelectionStart = lname.Text.Length;
                     lname.SelectionLength = 0;
@@ -508,7 +435,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
 
@@ -518,13 +445,13 @@ namespace MultiFaceRec
             {
                 Cursor.Current = Cursors.WaitCursor;
                 //Initialize the capture device
-                grabber = new Emgu.CV.Capture(num_of_device_cmbx.SelectedIndex);
-                grabber.SetCaptureProperty(Emgu.CV.CvEnum.CAP_PROP.CV_CAP_PROP_FPS, 60);
-                grabber.SetCaptureProperty(Emgu.CV.CvEnum.CAP_PROP.CV_CAP_PROP_FRAME_HEIGHT, 240);
-                grabber.SetCaptureProperty(Emgu.CV.CvEnum.CAP_PROP.CV_CAP_PROP_FRAME_WIDTH, 320);
+                grabber = new VideoCapture(num_of_device_cmbx.SelectedIndex);
+                grabber.Set(Emgu.CV.CvEnum.CapProp.Fps, 60);
+                grabber.Set(Emgu.CV.CvEnum.CapProp.FrameHeight, 240);
+                grabber.Set(Emgu.CV.CvEnum.CapProp.FrameWidth, 320);
                 grabber.QueryFrame();
                 //Initialize the FrameGraber event
-                Application.Idle += new EventHandler(FrameGrabber);
+                System.Windows.Forms.Application.Idle += new EventHandler(FrameGrabber);
                 //Enable capture button
                 capture_btn.Enabled = true;
                 names_cmbx.Enabled = true;
@@ -535,7 +462,7 @@ namespace MultiFaceRec
             {
                 enable_btn.Enabled = true;
                 num_of_device_cmbx.Enabled = true;
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
 
@@ -543,11 +470,11 @@ namespace MultiFaceRec
         {
             if (string.IsNullOrEmpty(names_cmbx.Text))
             {
-                MessageBox.Show("Select username first!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                System.Windows.Forms.MessageBox.Show("Select username first!", "Warning", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
             }
             else
             {
-                DialogResult result = MessageBox.Show("The system will capture 2 samples, make sure the user's face is directly positioned on the front camera. Click ok to start.", "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                DialogResult result = System.Windows.Forms.MessageBox.Show("The system will capture 2 samples, make sure the user's face is directly positioned on the front camera. Click ok to start.", "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
                 if (result == DialogResult.OK)
                 {
                     timer1.Start();
@@ -592,43 +519,48 @@ namespace MultiFaceRec
                 ContTrain = ContTrain + 1;
 
                 //Get a gray frame from capture device
-                gray = grabber.QueryGrayFrame().Resize(320, 240, Emgu.CV.CvEnum.INTER.CV_INTER_CUBIC);
+                var grayFrame = new Mat();
+                grabber.Retrieve(grayFrame, 0);
+                CvInvoke.CvtColor(grayFrame, grayFrame,ColorConversion.Bgr2Gray);
 
-                //Face Detector
-                MCvAvgComp[][] facesDetected = gray.DetectHaarCascade(
-                face,
-                1.2,
-                15,
-                Emgu.CV.CvEnum.HAAR_DETECTION_TYPE.DO_CANNY_PRUNING,
-                new Size(30, 30));
+                // Face Detector
+                var facesDetected = face.DetectMultiScale(
+                    grayFrame,
+                    1.2,
+                    15,
+                    new System.Drawing.Size(30, 30), // Use System.Drawing.Size
+                    System.Drawing.Size.Empty);      // Use System.Drawing.Size.Empty
+
 
                 //Action for each element detected
-                foreach (MCvAvgComp f in facesDetected[0])
+                foreach (var faceRect in facesDetected)
                 {
-                    TrainedFace = currentFrame.Copy(f.rect).Convert<Gray, byte>();
+                    TrainedFace = currentFrame.Copy(faceRect).Convert<Gray, byte>();
                     break;
                 }
 
                 //resize face detected image for force to compare the same size with the 
                 //test image with cubic interpolation type method
-                TrainedFace = result1.Resize(100, 100, Emgu.CV.CvEnum.INTER.CV_INTER_CUBIC);
+                TrainedFace = TrainedFace.Resize(100, 100, Inter.Cubic);
                 trainingImages.Add(TrainedFace);
                 labels.Add(names_cmbx.SelectedItem.ToString());
 
                 //Show face added in gray scale
 
-                imageBox1.Image = result1.Resize(200, 200, Emgu.CV.CvEnum.INTER.CV_INTER_CUBIC);
+                imageBox1.Image = TrainedFace;
+
+                TrainedFace.ToBitmap().Save(System.Windows.Forms.Application.StartupPath + "/TrainedFaces/face" + (last_img_num + 1) + ".bmp");
 
                 //Write the number of triained faces in a file text for further load
                 //File.WriteAllText(Application.StartupPath + "/TrainedFaces/TrainedLabels.txt", trainingImages.ToArray().Length.ToString() + Environment.NewLine + "%");
 
-                SoundPlayer player = new SoundPlayer(Application.StartupPath + "/SoundEffects/camera-shutter.wav");
+                SoundPlayer player = new SoundPlayer(System.Windows.Forms.Application.StartupPath + "/SoundEffects/camera-shutter.wav");
                 player.Play();
 
                 //Write the labels of triained faces in a file text for further load
                 for (i = 1; i < trainingImages.ToArray().Length + 1; i++)
                 {
-                    trainingImages.ToArray()[i - 1].Save(Application.StartupPath + "/TrainedFaces/face" + (last_img_num + 1) + ".bmp");
+                    trainingImages.ToArray()[i - 1].Save(System.Windows.Forms.Application.StartupPath + "/TrainedFaces/face" + (last_img_num + 1) + ".bmp");
                     //File.AppendAllText(Application.StartupPath + "/TrainedFaces/TrainedLabels.txt", labels.ToArray()[i - 1] + Environment.NewLine + "%");
                 }
                 if (bilang >= 2)
@@ -651,7 +583,7 @@ namespace MultiFaceRec
                 }
                 else
                 {
-                    filepath = Application.StartupPath + "/TrainedFaces/face" + (last_img_num + 1) + ".bmp";
+                    filepath = System.Windows.Forms.Application.StartupPath + "/TrainedFaces/face" + (last_img_num + 1) + ".bmp";
                     File.Delete(filepath);
                     bilang = 0;
                     timer1.Stop();
@@ -659,7 +591,7 @@ namespace MultiFaceRec
                     names_cmbx.SelectedIndex = -1;
                     names_cmbx.Items.Clear();
                     Read_names();
-                    MessageBox.Show("Failed to register!", "MySQL Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    System.Windows.Forms.MessageBox.Show("Failed to register!", "MySQL Error", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
 
                 }
 
@@ -668,7 +600,7 @@ namespace MultiFaceRec
                     bilang = 0;
                     timer1.Stop();
                     imageBox1.Image = null;
-                    MessageBox.Show(names_cmbx.SelectedItem.ToString() + "´s face detected and added successfully:)", "Trained Image", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    System.Windows.Forms.MessageBox.Show(names_cmbx.SelectedItem.ToString() + "´s face detected and added successfully:)", "Trained Image", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
                     names_cmbx.SelectedIndex = -1;
                     names_cmbx.Items.Clear();
                     Read_names();
@@ -678,7 +610,7 @@ namespace MultiFaceRec
             catch (Exception ex)
             {
                 timer1.Stop();
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
 
@@ -690,97 +622,110 @@ namespace MultiFaceRec
                 //label4.Text = "";
                 NamePersons.Add("");
 
+                // Get the current frame from the capture device
+                CvInvoke.Resize(grabber.QueryFrame(), currentFrame, new System.Drawing.Size(320, 240), 0, 0, Inter.Cubic);
 
-                //Get the current frame form capture device
-                currentFrame = grabber.QueryFrame().Resize(320, 240, Emgu.CV.CvEnum.INTER.CV_INTER_CUBIC);
 
-                //Convert it to Grayscale
-                gray = currentFrame.Convert<Gray, Byte>();
+                // Convert it to Grayscale
+                gray = currentFrame.Convert<Gray, byte>();
 
-                //Face Detector
-                MCvAvgComp[][] facesDetected = gray.DetectHaarCascade(
-              face,
-              1.2,
-              15,
-              Emgu.CV.CvEnum.HAAR_DETECTION_TYPE.DO_CANNY_PRUNING,
-              new Size(30, 30));
+                // Face Detector
+                var faceCascade = new CascadeClassifier("haarcascade_frontalface_default.xml");
+                var facesDetected = faceCascade.DetectMultiScale(gray, 1.2, 15, System.Drawing.Size.Empty);
 
-                //Action for each element detected
-                foreach (MCvAvgComp f in facesDetected[0])
+                // Action for each element detected
+                foreach (var f in facesDetected)
                 {
+                    System.Drawing.Rectangle rect = f;
                     t = t + 1;
-                    result1 = currentFrame.Copy(f.rect).Convert<Gray, byte>().Resize(100, 100, Emgu.CV.CvEnum.INTER.CV_INTER_CUBIC);
-                    //draw the face detected in the 0th (gray) channel with light green color
+                    Emgu.CV.Image<Emgu.CV.Structure.Gray, byte> result = gray.GetSubRect(f).Resize(100, 100, Emgu.CV.CvEnum.Inter.Cubic);
+                    currentFrame.Draw(f, new Emgu.CV.Structure.Bgr(System.Drawing.Color.LightGreen), 2);
 
-                    currentFrame.Draw(f.rect, new Bgr(Color.LightGreen), 2);
 
-                    bool isLiveFace = IsLiveFace(result1);
 
-                    if (isLiveFace)
+
+                    if (trainingImages.Count != 0)
                     {
-                        // Draw live face label in green color
-                        currentFrame.Draw("Live Face", ref font, new Point(f.rect.X - 2, f.rect.Y - 2), new Bgr(Color.Lime));
-                    }
-                    else
-                    {
-                        // Draw not live face label in red color
-                        currentFrame.Draw("Not Live Face", ref font, new Point(f.rect.X - 2, f.rect.Y - 2), new Bgr(Color.Red));
-                    }
-
-
-                    if (trainingImages.ToArray().Length != 0)
-                    {
-
-                        //TermCriteria for face recognition with numbers of trained images like maxIteration
+                        // TermCriteria for face recognition with numbers of trained images like maxIteration
                         MCvTermCriteria termCrit = new MCvTermCriteria(ContTrain, 0.001);
 
-                        //Eigen face recognizer
-                        EigenObjectRecognizer recognizer = new EigenObjectRecognizer(
-                           trainingImages.ToArray(),
-                           labels.ToArray(),
-                           3000,
-                           ref termCrit);
+                        // Convert List<Image<Gray, byte>> to IInputArrayOfArrays
+                        IInputArrayOfArrays trainingData = new VectorOfMat(trainingImages.Select(img => img.Mat).ToArray());
 
-                        name = recognizer.Recognize(result1);
+                        // Convert List<string> to an array of string labels
+                        List<string> labelsList = labels.ToList();
 
-                        finalname = name;
-                        //Draw the label for each face detected and recognized
-                        if (string.IsNullOrEmpty(name))
+                        // Eigen face recognizer
+                        EigenFaceRecognizer recognizer = new EigenFaceRecognizer();
+
+                        // Convert List<string> to an array of string labels
+                        string[] labelsArray = labelsList.ToArray();
+
+                        // Create an UMat to hold the labels data
+                        UMat labelsData = new UMat(labelsArray.Length, 1, DepthType.Cv32S, 1);
+                        labelsData.SetTo(labelsArray);
+
+                        // Train the recognizer with training data and labels
+                        recognizer.Train(trainingData, labelsData);
+
+                        // Perform recognition on the result image
+                        PredictionResult predictionResult = recognizer.Predict(result);
+
+                        // Get the predicted label and distance
+                        int predictedLabel = predictionResult.Label;
+                        float distance = (float)predictionResult.Distance;
+
+                        // Ensure predicted label is within the range of available labels
+                        if (predictedLabel >= 0 && predictedLabel < labelsList.Count)
                         {
-                            currentFrame.Draw(string.IsNullOrEmpty(name) ? "Unknown" : name, ref font, new Point(f.rect.X - 2, f.rect.Y - 2), new Bgr(Color.Red));
+                            string predictedName = labels[predictedLabel];
+
+                            finalname = predictedName;
+
+                            // Draw the label for each face detected and recognized
+                            if (string.IsNullOrEmpty(predictedName))
+                            {
+                                currentFrame.Draw("Unknown", new System.Drawing.Point(rect.X - 2, rect.Y - 2), Emgu.CV.CvEnum.FontFace.HersheyPlain, 1.0, new Emgu.CV.Structure.Bgr(System.Drawing.Color.Red));
+                            }
+                            else
+                            {
+                                currentFrame.Draw(predictedName, new System.Drawing.Point(rect.X - 2, rect.Y - 2), Emgu.CV.CvEnum.FontFace.HersheyPlain, 1.0, new Emgu.CV.Structure.Bgr(System.Drawing.Color.Lime));
+                            }
                         }
                         else
                         {
-                            currentFrame.Draw(name, ref font, new Point(f.rect.X - 2, f.rect.Y - 2), new Bgr(Color.Lime));
+                            // Handle case when predicted label is out of range
+                            finalname = "Unknown";
+                            currentFrame.Draw("Unknown", new System.Drawing.Point(rect.X - 2, rect.Y - 2), Emgu.CV.CvEnum.FontFace.HersheyPlain, 1.0, new Emgu.CV.Structure.Bgr(System.Drawing.Color.Red));
                         }
                     }
 
                     NamePersons[t - 1] = name;
                     NamePersons.Add("");
-
-                    //Set the number of faces detected on the scene
-                    //label3.Text = facesDetected[0].Length.ToString();
-
                 }
+
+                // Set the number of faces detected on the scene
+                //label3.Text = facesDetected.Length.ToString();
+
                 t = 0;
 
-                //Names concatenation of persons recognized
-                for (int nnn = 0; nnn < facesDetected[0].Length; nnn++)
+                // Names concatenation of persons recognized
+                for (int nnn = 0; nnn < facesDetected.Length; nnn++)
                 {
                     names = names + NamePersons[nnn];
                 }
-                //Show the faces procesed and recognized
+
+                // Show the faces processed and recognized
                 imageBoxFrameGrabber.Image = currentFrame;
                 names = "";
-                //Clear the list(vector) of names
+
+                // Clear the list (vector) of names
                 NamePersons.Clear();
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
-
         }
 
         private void face_enroll_admin_Click(object sender, EventArgs e)
@@ -795,7 +740,7 @@ namespace MultiFaceRec
                     formBackground.StartPosition = FormStartPosition.Manual;
                     formBackground.FormBorderStyle = FormBorderStyle.None;
                     formBackground.Opacity = .50d;
-                    formBackground.BackColor = Color.Black;
+                    formBackground.BackColor =System.Drawing.Color.Black;
                     formBackground.WindowState = FormWindowState.Maximized;
                     formBackground.Location = this.Location;
                     formBackground.ShowInTaskbar = false;
@@ -809,47 +754,47 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
 
         private void face_enroll_admin_MouseHover(object sender, EventArgs e)
         {
-            panel_btn.BackColor = Color.DeepSkyBlue;
+            panel_btn.BackColor =System.Drawing.Color.DeepSkyBlue;
         }
 
         private void face_enroll_admin_MouseLeave(object sender, EventArgs e)
         {
-            panel_btn.BackColor = Color.SteelBlue;
+            panel_btn.BackColor =System.Drawing.Color.SteelBlue;
         }
 
         private void Registration_FormClosing(object sender, FormClosingEventArgs e)
         {
             if (grabber != null)
             {
-                Application.Idle -= FrameGrabber;
+                System.Windows.Forms.Application.Idle -= FrameGrabber;
                 grabber.Dispose();
             }
         }
 
         private void enable_btn_MouseHover(object sender, EventArgs e)
         {
-            enable_groupBox.BackColor = Color.DodgerBlue;
+            enable_groupBox.BackColor =System.Drawing.Color.DodgerBlue;
         }
 
         private void enable_btn_MouseLeave(object sender, EventArgs e)
         {
-            enable_groupBox.BackColor = Color.Gray;
+            enable_groupBox.BackColor =System.Drawing.Color.Gray;
         }
 
         private void capture_btn_MouseHover(object sender, EventArgs e)
         {
-            capture_groupBox.BackColor = Color.LightSeaGreen;
+            capture_groupBox.BackColor =System.Drawing.Color.LightSeaGreen;
         }
 
         private void capture_btn_MouseLeave(object sender, EventArgs e)
         {
-            capture_groupBox.BackColor = Color.Gray;
+            capture_groupBox.BackColor =System.Drawing.Color.Gray;
         }
 
         private void back_to_register_Click(object sender, EventArgs e)
@@ -883,13 +828,28 @@ namespace MultiFaceRec
             //muncplty();
         }
 
+        private void label7_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void label22_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void groupBox3_Enter(object sender, EventArgs e)
+        {
+
+        }
+
         private void fname_TextChanged(object sender, EventArgs e)
         {
             try
             {
                 if (!System.Text.RegularExpressions.Regex.IsMatch(fname.Text, "^[a-zA-Z\\s]+$") && fname.Text != "")
                 {
-                    MessageBox.Show("It only accepts alphabetical characters!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    System.Windows.Forms.MessageBox.Show("It only accepts alphabetical characters!", "Warning", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
                     fname.Text = fname.Text.Substring(0, fname.Text.Length - 1);
                     fname.SelectionStart = fname.Text.Length;
                     fname.SelectionLength = 0;
@@ -897,7 +857,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
 
@@ -907,7 +867,7 @@ namespace MultiFaceRec
             {
                 if (!System.Text.RegularExpressions.Regex.IsMatch(m_initial.Text, "^[a-zA-Z]+$") && m_initial.Text != "")
                 {
-                    MessageBox.Show("It only accepts alphabetical characters!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    System.Windows.Forms.MessageBox.Show("It only accepts alphabetical characters!", "Warning", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
                     m_initial.Text = m_initial.Text.Substring(0, m_initial.Text.Length - 1);
                     m_initial.SelectionStart = m_initial.Text.Length;
                     m_initial.SelectionLength = 0;
@@ -915,7 +875,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
 
@@ -925,7 +885,7 @@ namespace MultiFaceRec
             {
                 if (!System.Text.RegularExpressions.Regex.IsMatch(gender_combx.Text, "^[a-zA-Z]+$") && gender_combx.Text != "")
                 {
-                    MessageBox.Show("It only accepts alphabetical characters!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    System.Windows.Forms.MessageBox.Show("It only accepts alphabetical characters!", "Warning", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
                     gender_combx.Text = gender_combx.Text.Substring(0, gender_combx.Text.Length - 1);
                     gender_combx.SelectionStart = gender_combx.Text.Length;
                     gender_combx.SelectionLength = 0;
@@ -933,7 +893,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
 
@@ -943,7 +903,7 @@ namespace MultiFaceRec
             {
                 if (!System.Text.RegularExpressions.Regex.IsMatch(contact_txbx.Text, "^[0-9]+$") && contact_txbx.Text != "")
                 {
-                    MessageBox.Show("It only accepts numeric values!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    System.Windows.Forms.MessageBox.Show("It only accepts numeric values!", "Warning", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
                     contact_txbx.Text = contact_txbx.Text.Substring(0, contact_txbx.Text.Length - 1);
                     contact_txbx.SelectionStart = contact_txbx.Text.Length;
                     contact_txbx.SelectionLength = 0;
@@ -951,7 +911,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
     }

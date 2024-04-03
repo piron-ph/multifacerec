@@ -15,6 +15,7 @@ using System.Windows.Forms;
 using Emgu.CV;
 using Emgu.CV.Structure;
 using Emgu.CV.CvEnum;
+using Emgu.CV.Face;
 using AForge.Video;
 using AForge.Video.DirectShow;
 using System.Media;
@@ -30,27 +31,32 @@ using Emgu.CV.Util;
 using System.Speech.Synthesis;
 using System.Globalization;
 using System.IO.Ports;
+using Microsoft.Office.Interop.Excel;
+using System.Windows;
+using DlibDotNet;
+using static Emgu.CV.Face.FaceRecognizer;
+using System.Linq;
 namespace MultiFaceRec
 {
     public partial class FrmPrincipal : Form
-    { 
+    {
         string finalname;
         Image<Bgr, Byte> currentFrame;
-        Emgu.CV.Capture grabber;
-        HaarCascade face;
-        MCvFont font = new MCvFont(FONT.CV_FONT_HERSHEY_TRIPLEX, 0.6d, 0.6d);
+        VideoCapture grabber;
+        CascadeClassifier face;
         Image<Gray, byte> result, TrainedFace = null;
         Image<Gray, byte> gray = null;
         List<Image<Gray, byte>> trainingImages = new List<Image<Gray, byte>>();
-        List<string> labels= new List<string>();
+        List<string> labels = new List<string>();
         List<string> NamePersons = new List<string>();
         int ContTrain, NumLabels, t;
         int bilang;
         string name, names = null;
         string filepath;
 
-        MySqlConnection connection = new MySqlConnection("datasource = localhost;port = 3306; Initial Catalog = 'e_log1'; username = root; password=");
-        MySqlConnection connection2 = new MySqlConnection("datasource = localhost;port = 3306; Initial Catalog = 'e_log1'; username = root; password=");
+
+        MySqlConnection connection = new MySqlConnection("datasource=localhost;port=3306;Initial Catalog=e_log1;username=root;password=");
+        MySqlConnection connection2 = new MySqlConnection("datasource=localhost;port=3306;Initial Catalog=e_log1;username=root;password=");
         CRUD crud = new CRUD();
         Face_Enroll_Admin admin = new Face_Enroll_Admin();
 
@@ -64,13 +70,22 @@ namespace MultiFaceRec
             try
             {
                 InitializeComponent();
+
+                FontFace fontFace = FontFace.HersheyTriplex;
+                double fontScale = 0.6d;
+                MCvScalar fontColor = new MCvScalar(255, 255, 255); // Assuming white color
+                int thickness = 1;
+
+                // Render text on the image
+                CvInvoke.PutText(currentFrame, "Your Text Here", new System.Drawing.Point(10, 50), fontFace, fontScale, fontColor, thickness);
+
                 //Disable capture button & list of names
                 capture_btn.Enabled = false;
                 names_cmbx.Enabled = false;
 
                 //Load haarcascades for face detection
-                face = new HaarCascade("haarcascade_frontalface_default.xml");
-                
+                face = new CascadeClassifier("haarcascade_frontalface_default.xml");
+
                 string qry = "SELECT Username, Image_name FROM face_enrollment_tb ORDER BY ID ASC";
                 MySqlCommand cmd = new MySqlCommand(qry, connection2);
                 if (connection2.State != ConnectionState.Open)
@@ -80,7 +95,7 @@ namespace MultiFaceRec
                 MySqlDataReader dr = cmd.ExecuteReader();
                 while (dr.Read())
                 {
-                    trainingImages.Add(new Image<Gray, byte>(Application.StartupPath + "/TrainedFaces/" + dr["Image_name"].ToString()));
+                    string imageFilePath = System.Windows.Forms.Application.StartupPath + "/TrainedFaces/" + dr["Image_name"].ToString();
                     labels.Add(dr["Username"].ToString());
                 }
                 dr.Close();
@@ -88,7 +103,7 @@ namespace MultiFaceRec
             }
             catch(Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
   
 
@@ -122,7 +137,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
 
@@ -147,7 +162,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
 
@@ -157,13 +172,13 @@ namespace MultiFaceRec
             {
                 Cursor.Current = Cursors.WaitCursor;
                 //Initialize the capture device
-                grabber = new Emgu.CV.Capture(num_of_device_cmbx.SelectedIndex);
-                grabber.SetCaptureProperty(Emgu.CV.CvEnum.CAP_PROP.CV_CAP_PROP_FPS, 60);
-                grabber.SetCaptureProperty(Emgu.CV.CvEnum.CAP_PROP.CV_CAP_PROP_FRAME_HEIGHT, 240);
-                grabber.SetCaptureProperty(Emgu.CV.CvEnum.CAP_PROP.CV_CAP_PROP_FRAME_WIDTH, 320);
+                grabber = new VideoCapture(num_of_device_cmbx.SelectedIndex);
+                grabber.Set(Emgu.CV.CvEnum.CapProp.Fps, 400);
+                grabber.Set(Emgu.CV.CvEnum.CapProp.FrameHeight, 240);
+                grabber.Set(Emgu.CV.CvEnum.CapProp.FrameWidth, 320);
                 grabber.QueryFrame();
                 //Initialize the FrameGraber event
-                Application.Idle += new EventHandler(FrameGrabber);
+                System.Windows.Forms.Application.Idle += new EventHandler(FrameGrabber);
                 //Enable capture button
                 capture_btn.Enabled = true;
                 names_cmbx.Enabled = true;
@@ -174,7 +189,7 @@ namespace MultiFaceRec
             {
                 enable_btn.Enabled = true;
                 num_of_device_cmbx.Enabled = true;
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
 
         }
@@ -185,11 +200,11 @@ namespace MultiFaceRec
             {
                 if (string.IsNullOrEmpty(names_cmbx.Text))
                 {
-                    MessageBox.Show("Select username first!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    System.Windows.Forms.MessageBox.Show("Select username first!", "Warning", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
                 }
                 else
                 {
-                    DialogResult result = MessageBox.Show("The system will capture 11 samples, make sure the user's face is directly positioned on the front camera. Click ok to start.", "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    DialogResult result = System.Windows.Forms.MessageBox.Show("The system will capture 11 samples, make sure the user's face is directly positioned on the front camera. Click ok to start.", "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
                     if (result == DialogResult.OK)
                     {
                         timer1.Start();
@@ -198,7 +213,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
     }
 
@@ -239,43 +254,48 @@ namespace MultiFaceRec
                 ContTrain = ContTrain + 1;
 
                 //Get a gray frame from capture device
-                gray = grabber.QueryGrayFrame().Resize(320, 240, Emgu.CV.CvEnum.INTER.CV_INTER_CUBIC);
+                var grayFrame = new Mat();
+                grabber.Retrieve(grayFrame, 0);
+                CvInvoke.CvtColor(grayFrame, grayFrame, ColorConversion.Bgr2Gray);
 
-                //Face Detector
-                MCvAvgComp[][] facesDetected = gray.DetectHaarCascade(
-                face,
-                1.2,
-                15,
-                Emgu.CV.CvEnum.HAAR_DETECTION_TYPE.DO_CANNY_PRUNING,
-                new Size(30, 30));
+                // Face Detector
+                var facesDetected = face.DetectMultiScale(
+                    grayFrame,
+                    1.2,
+                    15,
+                    new System.Drawing.Size(30, 30),
+                    System.Drawing.Size.Empty);
+
 
                 //Action for each element detected
-                foreach (MCvAvgComp f in facesDetected[0])
+                foreach (var faceRect in facesDetected)
                 {
-                    TrainedFace = currentFrame.Copy(f.rect).Convert<Gray, byte>();
+                    TrainedFace = currentFrame.Copy(faceRect).Convert<Gray, byte>();
                     break;
                 }
 
                 //resize face detected image for force to compare the same size with the 
                 //test image with cubic interpolation type method
-                TrainedFace = result.Resize(100, 100, Emgu.CV.CvEnum.INTER.CV_INTER_CUBIC);
+                TrainedFace = result.Resize(100, 100, Emgu.CV.CvEnum.Inter.Cubic);
                 trainingImages.Add(TrainedFace);
                 labels.Add(names_cmbx.SelectedItem.ToString());
 
                 //Show face added in gray scale
 
-                imageBox1.Image = result.Resize(200, 200, Emgu.CV.CvEnum.INTER.CV_INTER_CUBIC);
+                imageBox1.Image = TrainedFace;
+
+                TrainedFace.ToBitmap().Save(System.Windows.Forms.Application.StartupPath + "/TrainedFaces/face" + (last_img_num + 1) + ".bmp");
 
                 //Write the number of triained faces in a file text for further load
                 //File.WriteAllText(Application.StartupPath + "/TrainedFaces/TrainedLabels.txt", trainingImages.ToArray().Length.ToString() + Environment.NewLine + "%");
 
-                SoundPlayer player = new SoundPlayer(Application.StartupPath + "/SoundEffects/camera-shutter.wav");
+                System.Media.SoundPlayer player = new System.Media.SoundPlayer(System.Windows.Forms.Application.StartupPath + "/SoundEffects/camera-shutter.wav");
                 player.Play();
 
                 //Write the labels of triained faces in a file text for further load
                 for (i = 1; i < trainingImages.ToArray().Length + 1; i++)
                 {
-                    trainingImages.ToArray()[i - 1].Save(Application.StartupPath + "/TrainedFaces/face" + (last_img_num + 1) + ".bmp");
+                    trainingImages.ToArray()[i - 1].Save(System.Windows.Forms.Application.StartupPath + "/TrainedFaces/face" + (last_img_num + 1) + ".bmp");
                     //File.AppendAllText(Application.StartupPath + "/TrainedFaces/TrainedLabels.txt", labels.ToArray()[i - 1] + Environment.NewLine + "%");
                 }
                 if (bilang >= 2)
@@ -298,7 +318,7 @@ namespace MultiFaceRec
                 }
                 else
                 {
-                    filepath = Application.StartupPath + "/TrainedFaces/face" + (last_img_num + 1) + ".bmp";
+                    filepath = System.Windows.Forms.Application.StartupPath + "/TrainedFaces/face" + (last_img_num + 1) + ".bmp";
                     File.Delete(filepath);
                     bilang = 0;
                     timer1.Stop();
@@ -306,7 +326,7 @@ namespace MultiFaceRec
                     names_cmbx.SelectedIndex = -1;
                     names_cmbx.Items.Clear();
                     Read_names();
-                    MessageBox.Show("Failed to register!", "MySQL Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    System.Windows.Forms.MessageBox.Show("Failed to register!", "MySQL Error", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
 
                 }
 
@@ -315,7 +335,7 @@ namespace MultiFaceRec
                     bilang = 0;
                     timer1.Stop();
                     imageBox1.Image = null;
-                    MessageBox.Show(names_cmbx.SelectedItem.ToString() + "´s face detected and added successfully:)", "Trained Image", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    System.Windows.Forms.MessageBox.Show(names_cmbx.SelectedItem.ToString() + "´s face detected and added successfully:)", "Trained Image", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
                     names_cmbx.SelectedIndex = -1;
                     names_cmbx.Items.Clear();
                     Read_names();
@@ -325,7 +345,7 @@ namespace MultiFaceRec
             catch (Exception ex)
             {
                 timer1.Stop();
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
 
         }
@@ -335,86 +355,115 @@ namespace MultiFaceRec
             try
             {
                 label3.Text = "0";
-                //label4.Text = "";
                 NamePersons.Add("");
 
+                // Get the current frame from the capture device
+                currentFrame = grabber.QueryFrame().ToImage<Bgr, byte>();
+                Mat resizedFrame = new Mat();
+                CvInvoke.Resize(currentFrame, resizedFrame, new System.Drawing.Size(320, 240), 0, 0, Inter.Cubic);
+                currentFrame = resizedFrame.ToImage<Bgr, byte>();
 
-                //Get the current frame form capture device
-                currentFrame = grabber.QueryFrame().Resize(320, 240, Emgu.CV.CvEnum.INTER.CV_INTER_CUBIC);
 
-                //Convert it to Grayscale
-                gray = currentFrame.Convert<Gray, Byte>();
 
-                //Face Detector
-                MCvAvgComp[][] facesDetected = gray.DetectHaarCascade(
-              face,
-              1.2,
-              15,
-              Emgu.CV.CvEnum.HAAR_DETECTION_TYPE.DO_CANNY_PRUNING,
-              new Size(30, 30));
+                // Convert it to Grayscale
+                gray = currentFrame.Convert<Gray, byte>();
 
-                //Action for each element detected
-                foreach (MCvAvgComp f in facesDetected[0])
+                // Face Detector
+                var faceCascade = new CascadeClassifier("haarcascade_frontalface_default.xml");
+                var facesDetected = faceCascade.DetectMultiScale(gray, 1.1, 10, System.Drawing.Size.Empty);
+
+
+                // Action for each element detected
+                foreach (var rect in facesDetected)
                 {
                     t = t + 1;
-                    result = currentFrame.Copy(f.rect).Convert<Gray, byte>().Resize(100, 100, Emgu.CV.CvEnum.INTER.CV_INTER_CUBIC);
-                    //draw the face detected in the 0th (gray) channel with light green color
-                    currentFrame.Draw(f.rect, new Bgr(Color.LightGreen), 2);
+                    Emgu.CV.Image<Emgu.CV.Structure.Gray, byte> result = gray.GetSubRect(rect).Resize(100, 100, Emgu.CV.CvEnum.Inter.Cubic);
 
+                    // Draw the face detected in the 0th (gray) channel with light green color
+                    currentFrame.Draw(rect, new Emgu.CV.Structure.Bgr(Color.LightGreen), 2);
 
-                    if (trainingImages.ToArray().Length != 0)
+                    if (trainingImages.Count != 0)
                     {
-
-                        //TermCriteria for face recognition with numbers of trained images like maxIteration
+                        // TermCriteria for face recognition with numbers of trained images like maxIteration
                         MCvTermCriteria termCrit = new MCvTermCriteria(ContTrain, 0.001);
 
-                        //Eigen face recognizer
-                        EigenObjectRecognizer recognizer = new EigenObjectRecognizer(
-                           trainingImages.ToArray(),
-                           labels.ToArray(),
-                           3000,
-                           ref termCrit);
+                        // Convert List<Image<Gray, byte>> to IInputArrayOfArrays
+                        IInputArrayOfArrays trainingData = new VectorOfMat(trainingImages.Select(img => img.Mat).ToArray());
 
-                        name = recognizer.Recognize(result);
+                        // Convert List<string> to an array of string labels
+                        List<string> labelsList = labels.ToList();
 
-                        finalname = name;
-                        //Draw the label for each face detected and recognized
-                        if (string.IsNullOrEmpty(name))
+                        // Eigen face recognizer
+                        EigenFaceRecognizer recognizer = new EigenFaceRecognizer();
+
+                        // Convert List<string> to an array of string labels
+                        string[] labelsArray = labelsList.ToArray();
+
+                        // Create an UMat to hold the labels data
+                        UMat labelsData = new UMat(labelsArray.Length, 1, DepthType.Cv32S, 1);
+                        labelsData.SetTo(labelsArray);
+
+                        // Train the recognizer with training data and labels
+                        recognizer.Train(trainingData, labelsData);
+
+                        // Perform recognition on the result image
+                        PredictionResult predictionResult = recognizer.Predict(result);
+
+                        // Get the predicted label and distance
+                        int predictedLabel = predictionResult.Label;
+                        float distance = (float)predictionResult.Distance;
+
+                        // Ensure predicted label is within the range of available labels
+                        if (predictedLabel >= 0 && predictedLabel < labelsList.Count)
                         {
-                            currentFrame.Draw(string.IsNullOrEmpty(name) ? "Unknown" : name, ref font, new Point(f.rect.X - 2, f.rect.Y - 2), new Bgr(Color.Red));
+                            string predictedName = labels[predictedLabel];
+
+                            finalname = predictedName;
+
+                            // Draw the label for each face detected and recognized
+                            if (string.IsNullOrEmpty(predictedName))
+                            {
+                                currentFrame.Draw("Unknown", new System.Drawing.Point(rect.X - 2, rect.Y - 2), Emgu.CV.CvEnum.FontFace.HersheyPlain, 1.0, new Emgu.CV.Structure.Bgr(Color.Red));
+                            }
+                            else
+                            {
+                                currentFrame.Draw(predictedName, new System.Drawing.Point(rect.X - 2, rect.Y - 2), Emgu.CV.CvEnum.FontFace.HersheyPlain, 1.0, new Emgu.CV.Structure.Bgr(Color.Lime));
+                            }
                         }
                         else
                         {
-                            currentFrame.Draw(name, ref font, new Point(f.rect.X - 2, f.rect.Y - 2), new Bgr(Color.Lime));
+                            // Handle case when predicted label is out of range
+                            finalname = "Unknown";
+                            currentFrame.Draw("Unknown", new System.Drawing.Point(rect.X - 2, rect.Y - 2), Emgu.CV.CvEnum.FontFace.HersheyPlain, 1.0, new Emgu.CV.Structure.Bgr(Color.Red));
                         }
                     }
 
                     NamePersons[t - 1] = name;
                     NamePersons.Add("");
-
-                    //Set the number of faces detected on the scene
-                    label3.Text = facesDetected[0].Length.ToString();
-
                 }
-                t = 0;
 
-                //Names concatenation of persons recognized
-                for (int nnn = 0; nnn < facesDetected[0].Length; nnn++)
+
+                // Set the number of faces detected on the scene
+                label3.Text = facesDetected.Length.ToString();
+
+                // Names concatenation of persons recognized
+                for (int nnn = 0; nnn < facesDetected.Length; nnn++)
                 {
                     names = names + NamePersons[nnn];
                 }
-                //Show the faces procesed and recognized
+
+                // Show the processed and recognized faces
                 imageBoxFrameGrabber.Image = currentFrame;
                 names = "";
-                //Clear the list(vector) of names
+                // Clear the list(vector) of names
                 NamePersons.Clear();
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
-
         }
+
 
         private void close_btn_Click(object sender, EventArgs e)
         {
@@ -457,7 +506,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                System.Windows.Forms.MessageBox.Show(ex.Message, "Information", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             }
         }
 
@@ -465,7 +514,7 @@ namespace MultiFaceRec
         {
             if (grabber != null)
             {
-                Application.Idle -= FrameGrabber;
+                System.Windows.Forms.Application.Idle -= FrameGrabber;
                 grabber.Dispose();
             }
         }

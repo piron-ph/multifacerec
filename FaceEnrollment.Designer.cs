@@ -2,14 +2,8 @@
 {
     partial class FrmPrincipal
     {
-        /// <summary>
-        /// Variable del diseñador requerida.
-        /// </summary>
         private System.ComponentModel.IContainer components = null;
 
-        /// <summary>
-        /// Limpiar los recursos que se estén utilizando.
-        /// </summary>
         /// <param name="disposing">true si los recursos administrados se deben eliminar; false en caso contrario, false.</param>
         protected override void Dispose(bool disposing)
         {
@@ -22,10 +16,6 @@
 
         #region Código generado por el Diseñador de Windows Forms
 
-        /// <summary>
-        /// Método necesario para admitir el Diseñador. No se puede modificar
-        /// el contenido del método con el editor de código.
-        /// </summary>
         private void InitializeComponent()
         {
             this.components = new System.ComponentModel.Container();
@@ -40,7 +30,7 @@
             this.label3 = new System.Windows.Forms.Label();
             this.groupBox2 = new System.Windows.Forms.GroupBox();
             this.groupBox3 = new System.Windows.Forms.GroupBox();
-            this.imageBox1 = new Emgu.CV.UI.ImageBox();
+            this.imageBoxFrameGrabber = new Emgu.CV.UI.ImageBox();
             this.groupBox9 = new System.Windows.Forms.GroupBox();
             this.capture_btn = new System.Windows.Forms.Button();
             this.groupBox6 = new System.Windows.Forms.GroupBox();
