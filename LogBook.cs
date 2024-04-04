@@ -91,7 +91,7 @@ namespace MultiFaceRec
             InitializeComponent();
             try
             {
-                //DATETIME & TIMER
+                // DATETIME & TIMER
                 date_login.Text = DateTime.Now.ToString("MMM dd yyy");
                 time_login.Text = DateTime.Now.ToString("hh:mm tt");
                 login_timer.Start();
@@ -104,23 +104,50 @@ namespace MultiFaceRec
                 MCvScalar fontColor = new MCvScalar(255, 255, 255); // Assuming white color
                 int thickness = 1;
 
-                //Load haarcascades for face detection
-                face = new CascadeClassifier("haarcascade_frontalface_default.xml");
+                // Load haarcascades for face detection
+                if (File.Exists("haarcascade_frontalface_default.xml"))
+                {
+                    face = new CascadeClassifier("haarcascade_frontalface_default.xml");
+                }
+                else
+                {
+                    MessageBox.Show("Haarcascade file not found.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
 
-                string qry = "SELECT Username, Image_name FROM face_enrollment_tb";
-                MySqlCommand cmd = new MySqlCommand(qry, connection2);
-                if (connection2.State != ConnectionState.Open)
+                if (connection2 != null)
                 {
-                    connection2.Open();
+                    string qry = "SELECT Username, Image_name FROM face_enrollment_tb";
+                    MySqlCommand cmd = new MySqlCommand(qry, connection2);
+                    if (connection2.State != ConnectionState.Open)
+                    {
+                        connection2.Open();
+                    }
+                    MySqlDataReader dr = cmd.ExecuteReader();
+                    while (dr.Read())
+                    {
+                        if (dr["Image_name"] != null && dr["Username"] != null)
+                        {
+                            string imageName = dr["Image_name"].ToString();
+                            if (File.Exists(Application.StartupPath + "/TrainedFaces/" + imageName))
+                            {
+                                trainingImages.Add(new Image<Gray, byte>(Application.StartupPath + "/TrainedFaces/" + imageName));
+                                labels.Add(dr["Username"].ToString());
+                            }
+                            else
+                            {
+                                MessageBox.Show("Image file '" + imageName + "' not found.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            }
+                        }
+                    }
+                    dr.Close();
+                    connection2.Close();
                 }
-                MySqlDataReader dr = cmd.ExecuteReader();
-                while (dr.Read())
+                else
                 {
-                    trainingImages.Add(new Image<Gray, byte>(Application.StartupPath + "/TrainedFaces/" + dr["Image_name"].ToString()));
-                    labels.Add(dr["Username"].ToString());
+                    MessageBox.Show("Database connection is null.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
                 }
-                dr.Close();
-                connection2.Close();
 
                 DISABLE_TEXTBX();
                 READ_RECORD();
@@ -133,6 +160,7 @@ namespace MultiFaceRec
                 MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
+
 
         string logbook_date = DateTime.Now.ToString("MMM dd yyy");
         Review_Logbook review_logbook = new Review_Logbook();
@@ -178,10 +206,10 @@ namespace MultiFaceRec
                 date_lbl.Text = DateTime.Now.ToString("MMM dd yyy");
                 day_lbl.Text = DateTime.Now.ToString("ddd");
 
-                //DEFAULT TIMEIN
+                // DEFAULT TIMEIN
                 string qry1 = "SELECT Default_Timein FROM timeout_tb";
                 MySqlCommand cmd1 = new MySqlCommand(qry1, connection2);
-                if (connection2.State != ConnectionState.Open)
+                if (connection2 != null && connection2.State != ConnectionState.Open)
                 {
                     connection2.Open();
                 }
@@ -191,9 +219,12 @@ namespace MultiFaceRec
                     timein_lbl.Text = (dr1["Default_Timein"].ToString());
                 }
                 dr1.Close();
-                connection2.Close();
+                if (connection2 != null && connection2.State != ConnectionState.Closed)
+                {
+                    connection2.Close();
+                }
 
-                //CAPTURE DEVICES
+                // CAPTURE DEVICES
                 if (filter_collection == null)
                 {
                     FilterInfoCollection filter_collection = new FilterInfoCollection(FilterCategory.VideoInputDevice);
@@ -211,7 +242,6 @@ namespace MultiFaceRec
                 {
                     num_of_device_cmbx.Items.Add(x);
                     x++;
-
                 } while (x < devices);
 
                 num_of_device_cmbx.SelectedIndex = 1;
@@ -222,9 +252,11 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
+                MessageBox.Show("An error occurred: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 num_of_device_cmbx.SelectedIndex = 0;
             }
         }
+
 
         private void timer1_Tick(object sender, EventArgs e)
         {
@@ -321,6 +353,12 @@ namespace MultiFaceRec
 
             try
             {
+                if (currentFrame == null || faceRect == null)
+                {
+                    Console.WriteLine("Current frame or face rectangle is null.");
+                    return false;
+                }
+
                 System.Drawing.Rectangle emguRect = new System.Drawing.Rectangle((int)faceRect.Left, (int)faceRect.Top, (int)faceRect.Width, (int)faceRect.Height);
 
                 // Convert the current frame to grayscale
@@ -335,8 +373,6 @@ namespace MultiFaceRec
                 DlibDotNet.Rectangle dlibRect = new DlibDotNet.Rectangle(emguRect.Left, emguRect.Top, emguRect.Right, emguRect.Bottom);
                 bool headMovementDetected = DetectHeadMovement(grayFrame, dlibRect);
 
-
-
                 // Determine if the face is live based on the results of blinking and head movement detection
                 isLive = blinkingDetected && headMovementDetected;
             }
@@ -350,29 +386,60 @@ namespace MultiFaceRec
         }
 
 
+
         private bool DetectBlinking(Image<Gray, byte> currentFrame)
         {
-            double ear = CalculateEyeAspectRatio(currentFrame);
-            double blinkThreshold = 0.2;
-            bool isBlink = ear < blinkThreshold;
-            return isBlink;
+            try
+            {
+                if (currentFrame == null)
+                {
+                    Console.WriteLine("Current frame is null.");
+                    return false;
+                }
+
+                double ear = CalculateEyeAspectRatio(currentFrame);
+                double blinkThreshold = 0.2;
+                bool isBlink = ear < blinkThreshold;
+                return isBlink;
+            }
+            catch (Exception ex)
+            {
+                // Handle exceptions
+                Console.WriteLine($"Error in DetectBlinking: {ex.Message}");
+                return false;
+            }
         }
+
 
         private double CalculateEyeAspectRatio(Image<Gray, byte> currentFrame)
         {
-            PointF p1 = new PointF(0, 0);// Left eye inner corner
-            PointF p2 = new PointF(0, 0);// Left eye outer corner
-            PointF p3 = new PointF(0, 0);// Right eye inner corner
-            PointF p4 = new PointF(0, 0);// Right eye outer corner
-            PointF p5 = new PointF(0, 0);// Left eye top
-            PointF p6 = new PointF(0, 0);// Left eye bottom
+            try
+            {
+                if (currentFrame == null)
+                {
+                    Console.WriteLine("Current frame is null.");
+                    return 0.0;
+                }
+                PointF p1 = new PointF(0, 0);// Left eye inner corner
+                PointF p2 = new PointF(0, 0);// Left eye outer corner
+                PointF p3 = new PointF(0, 0);// Right eye inner corner
+                PointF p4 = new PointF(0, 0);// Right eye outer corner
+                PointF p5 = new PointF(0, 0);// Left eye top
+                PointF p6 = new PointF(0, 0);// Left eye bottom
 
-            double d1 = Math.Sqrt(Math.Pow(p2.X - p6.X, 2) + Math.Pow(p2.Y - p6.Y, 2));
-            double d2 = Math.Sqrt(Math.Pow(p3.X - p5.X, 2) + Math.Pow(p3.Y - p5.Y, 2));
-            double d3 = Math.Sqrt(Math.Pow(p1.X - p4.X, 2) + Math.Pow(p1.Y - p4.Y, 2));
+                double d1 = Math.Sqrt(Math.Pow(p2.X - p6.X, 2) + Math.Pow(p2.Y - p6.Y, 2));
+                double d2 = Math.Sqrt(Math.Pow(p3.X - p5.X, 2) + Math.Pow(p3.Y - p5.Y, 2));
+                double d3 = Math.Sqrt(Math.Pow(p1.X - p4.X, 2) + Math.Pow(p1.Y - p4.Y, 2));
 
-            double ear = (d1 + d2) / (2 * d3);
-            return ear;
+                double ear = (d1 + d2) / (2 * d3);
+                return ear;
+            }
+            catch (Exception ex)
+            {
+                // Handle exceptions
+                Console.WriteLine($"Error in CalculateEyeAspectRatio: {ex.Message}");
+                return 0.0;
+            }
         }
 
 
@@ -382,18 +449,54 @@ namespace MultiFaceRec
 
             try
             {
+                if (currentFrame == null || roi == null)
+                {
+                    Console.WriteLine("Current frame or ROI is null.");
+                    return false;
+                }
+
                 // Convert Emgu.CV image to System.Drawing.Bitmap
                 Bitmap bitmap = currentFrame.ToBitmap();
+
+                if (bitmap == null)
+                {
+                    Console.WriteLine("Failed to convert current frame to bitmap.");
+                    return false;
+                }
 
                 // Convert System.Drawing.Bitmap to DlibDotNet.Array2D<byte>
                 DlibDotNet.Array2D<byte> dlibImage = BitmapToDlibArray2D(bitmap);
 
+                if (dlibImage == null)
+                {
+                    Console.WriteLine("Failed to convert bitmap to DlibDotNet.Array2D<byte>.");
+                    return false;
+                }
+
                 // Load shape predictor model
                 var shapePredictorModelFilePath = "shape_predictor_68_face_landmarks.dat";
+                if (!File.Exists(shapePredictorModelFilePath))
+                {
+                    Console.WriteLine("Shape predictor model file not found.");
+                    return false;
+                }
+
                 var shapePredictor = ShapePredictor.Deserialize(shapePredictorModelFilePath);
+
+                if (shapePredictor == null)
+                {
+                    Console.WriteLine("Failed to deserialize shape predictor model.");
+                    return false;
+                }
 
                 // Detect facial landmarks within the ROI
                 var shape = shapePredictor.Detect(dlibImage, roi);
+
+                if (shape == null)
+                {
+                    Console.WriteLine("Failed to detect facial landmarks.");
+                    return false;
+                }
 
                 // Convert DlibDotNet.Point to System.Drawing.PointF
                 var nosePoint = ToPointF(shape.GetPart(30));
@@ -421,41 +524,97 @@ namespace MultiFaceRec
             return isHeadMoved;
         }
 
+
         // Helper method to convert Bitmap to DlibDotNet.Array2D<byte>
         private DlibDotNet.Array2D<byte> BitmapToDlibArray2D(Bitmap bitmap)
         {
-            // Convert Bitmap to byte array
-            System.Drawing.Rectangle rect = new System.Drawing.Rectangle(0, 0, bitmap.Width, bitmap.Height);
-            BitmapData bmpData = bitmap.LockBits(rect, ImageLockMode.ReadOnly, bitmap.PixelFormat);
-            int numBytes = bmpData.Stride * bitmap.Height;
-            byte[] imageData = new byte[numBytes];
-            Marshal.Copy(bmpData.Scan0, imageData, 0, numBytes);
-            bitmap.UnlockBits(bmpData);
+            try
+            {
+                if (bitmap == null)
+                {
+                    Console.WriteLine("Bitmap is null.");
+                    return null;
+                }
 
-            // Convert byte array to DlibDotNet.Array2D<byte>
-            DlibDotNet.Array2D<byte> dlibImage = DlibDotNet.Dlib.LoadImageData<byte>(imageData, (uint)bitmap.Height, (uint)bitmap.Width, (uint)bmpData.Stride);
+                // Convert Bitmap to byte array
+                System.Drawing.Rectangle rect = new System.Drawing.Rectangle(0, 0, bitmap.Width, bitmap.Height);
+                BitmapData bmpData = bitmap.LockBits(rect, ImageLockMode.ReadOnly, bitmap.PixelFormat);
 
-            return dlibImage;
+                if (bmpData == null)
+                {
+                    Console.WriteLine("Failed to lock bits of the bitmap.");
+                    return null;
+                }
+
+                int numBytes = bmpData.Stride * bitmap.Height;
+                byte[] imageData = new byte[numBytes];
+                Marshal.Copy(bmpData.Scan0, imageData, 0, numBytes);
+                bitmap.UnlockBits(bmpData);
+
+                // Convert byte array to DlibDotNet.Array2D<byte>
+                DlibDotNet.Array2D<byte> dlibImage = DlibDotNet.Dlib.LoadImageData<byte>(imageData, (uint)bitmap.Height, (uint)bitmap.Width, (uint)bmpData.Stride);
+
+                return dlibImage;
+            }
+            catch (Exception ex)
+            {
+                // Handle exceptions
+                Console.WriteLine($"Error in BitmapToDlibArray2D: {ex.Message}");
+                return null;
+            }
         }
+
 
 
 
 
         private System.Drawing.PointF ToPointF(DlibDotNet.Point dlibPoint)
         {
-            return new System.Drawing.PointF((float)dlibPoint.X, (float)dlibPoint.Y);
+            try
+            {
+                if (dlibPoint == null)
+                {
+                    Console.WriteLine("DlibPoint is null.");
+                    return PointF.Empty;
+                }
+
+                return new System.Drawing.PointF((float)dlibPoint.X, (float)dlibPoint.Y);
+            }
+            catch (Exception ex)
+            {
+                // Handle exceptions
+                Console.WriteLine($"Error in ToPointF: {ex.Message}");
+                return PointF.Empty;
+            }
         }
+
         private double CalculateAngleBetweenPoints(PointF centerPoint, PointF point1, PointF point2)
         {
-            double angleRadians = Math.Atan2(point2.Y - centerPoint.Y, point2.X - centerPoint.X) -
-                                  Math.Atan2(point1.Y - centerPoint.Y, point1.X - centerPoint.X);
-            double angleDegrees = angleRadians * (180 / Math.PI);
-            if (angleDegrees < 0)
+            try
             {
-                angleDegrees += 360;
+                if (centerPoint == null || point1 == null || point2 == null)
+                {
+                    Console.WriteLine("One or more points are null.");
+                    return 0.0;
+                }
+
+                double angleRadians = Math.Atan2(point2.Y - centerPoint.Y, point2.X - centerPoint.X) -
+                                      Math.Atan2(point1.Y - centerPoint.Y, point1.X - centerPoint.X);
+                double angleDegrees = angleRadians * (180 / Math.PI);
+                if (angleDegrees < 0)
+                {
+                    angleDegrees += 360;
+                }
+                return angleDegrees;
             }
-            return angleDegrees;
+            catch (Exception ex)
+            {
+                // Handle exceptions
+                Console.WriteLine($"Error in CalculateAngleBetweenPoints: {ex.Message}");
+                return 0.0;
+            }
         }
+
 
         private void login_timer_Tick(object sender, EventArgs e)
         {
@@ -703,12 +862,14 @@ namespace MultiFaceRec
             catch (Exception ex)
             {
                 MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                if (drr != null)
+
+                // Close data reader if it's not null
+                if (drr != null && !drr.IsClosed)
                 {
                     drr.Close();
                 }
 
-                // Check if connection is not null before attempting to close it
+                // Close connection if it's not null and open
                 if (connection != null && connection.State != ConnectionState.Closed)
                 {
                     connection.Close();

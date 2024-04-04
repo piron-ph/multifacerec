@@ -139,6 +139,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
+                System.Windows.Forms.MessageBox.Show("An error occurred: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 usertype();
                 num_of_device_cmbx.SelectedIndex = 0;
             }
@@ -238,7 +239,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-
+                System.Windows.Forms.MessageBox.Show("An error occurred: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 

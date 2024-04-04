@@ -15,7 +15,7 @@ namespace MultiFaceRec
     public partial class Login : Form
     {
         Dashboard dash = new Dashboard();
-        MySqlConnection connection = new MySqlConnection("datasource=localhost;port=3306;Initial Catalog='e_log1';username=root;password=");
+        MySqlConnection connection = new MySqlConnection("datasource = localhost;port = 3306; Initial Catalog = 'e_log1'; username = root; password=");
         bool check;
         int loginAttempts = 0;
         DateTime cooldownEndTime;
@@ -35,7 +35,7 @@ namespace MultiFaceRec
 
                 if (systemLocked)
                 {
-                    if (username_txbx.Text == "admin" && password_txbx.Text == "admin")
+                    if (username_txbx != null && password_txbx != null && username_txbx.Text == "admin" && password_txbx.Text == "admin")
                     {
                         check = true;
                         systemLocked = false; // Unlocking the system
@@ -43,37 +43,23 @@ namespace MultiFaceRec
                 }
                 else
                 {
-                    string query = "SELECT Username, Password FROM security_tb";
-                    if (connection != null)
+                    string querry = "Select Username, Password from security_tb";
+                    MySqlCommand cmd = new MySqlCommand(querry, connection);
+                    if (connection.State != ConnectionState.Open)
                     {
-                        MySqlCommand cmd = new MySqlCommand(query, connection);
-                        if (connection.State != ConnectionState.Open)
+                        connection.Open();
+                    }
+                    MySqlDataReader dr = cmd.ExecuteReader();
+                    while (dr.Read())
+                    {
+                        if (username_txbx != null && password_txbx != null && username_txbx.Text == (dr["Username"].ToString()) && password_txbx.Text == (dr["Password"].ToString()))
                         {
-                            connection.Open();
+                            check = true;
                         }
-                        MySqlDataReader dr = cmd.ExecuteReader();
-                        if (username_txbx != null && password_txbx != null)
-                        {
-                            while (dr.Read())
-                            {
-                                if (username_txbx.Text == (dr["Username"].ToString()) && password_txbx.Text == (dr["Password"].ToString()))
-                                {
-                                    check = true;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            MessageBox.Show("Username or password text box is null.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        }
+                    }
 
-                        dr.Close();
-                        connection.Close();
-                    }
-                    else
-                    {
-                        MessageBox.Show("Database connection is null.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    }
+                    dr.Close();
+                    connection.Close();
                 }
 
                 if (check)
@@ -89,20 +75,21 @@ namespace MultiFaceRec
                     else
                     {
                         loginAttempts++;
-                        if (loginAttempts >= 5)
+
+                        if (loginAttempts >= 5 && DateTime.Now < cooldownEndTime)
                         {
-                            cooldownEndTime = DateTime.Now.AddMinutes(5);
                             MessageBox.Show("Wrong password, please try again within 5 minutes", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                             loginAttempts = 0; // Resetting login attempts after cooldown triggered
-                        }
-                        else if (loginAttempts > 5 && DateTime.Now < cooldownEndTime)
-                        {
-                            MessageBox.Show("Please wait for the cooldown period to finish.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            cooldownEndTime = DateTime.Now.AddMinutes(5); // Start cooldown timer
                         }
                         else if (loginAttempts >= 3 && DateTime.Now > cooldownEndTime)
                         {
                             systemLocked = true;
                             MessageBox.Show("System is locked. Use admin credentials to unlock.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                        else if (loginAttempts >= 3 && loginAttempts < 5 && DateTime.Now < cooldownEndTime)
+                        {
+                            MessageBox.Show("Please wait for the cooldown period to finish.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         }
                         else
                         {
@@ -113,7 +100,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show("An error occurred: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
 

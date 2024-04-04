@@ -357,8 +357,23 @@ namespace MultiFaceRec
                 label3.Text = "0";
                 NamePersons.Add("");
 
+                // Null checks
+                if (grabber == null)
+                {
+                    Console.WriteLine("Error: Grabber is null in FrameGrabber function.");
+                    return;
+                }
+
                 // Get the current frame from the capture device
                 currentFrame = grabber.QueryFrame().ToImage<Bgr, byte>();
+
+                // Null checks for currentframe
+                if (currentFrame == null)
+                {
+                    Console.WriteLine("Error: CurrentFrame is null in FrameGrabber function.");
+                    return;
+                }
+
                 Mat resizedFrame = new Mat();
                 CvInvoke.Resize(currentFrame, resizedFrame, new System.Drawing.Size(320, 240), 0, 0, Inter.Cubic);
                 currentFrame = resizedFrame.ToImage<Bgr, byte>();
@@ -367,6 +382,13 @@ namespace MultiFaceRec
 
                 // Convert it to Grayscale
                 gray = currentFrame.Convert<Gray, byte>();
+
+                // null checks gray
+                if (gray == null)
+                {
+                    Console.WriteLine("Error: Gray is null in FrameGrabber function.");
+                    return;
+                }
 
                 // Face Detector
                 var faceCascade = new CascadeClassifier("haarcascade_frontalface_default.xml");
@@ -453,7 +475,15 @@ namespace MultiFaceRec
                 }
 
                 // Show the processed and recognized faces
-                imageBoxFrameGrabber.Image = currentFrame;
+                if (imageBoxFrameGrabber != null)
+                {
+                    imageBoxFrameGrabber.Image = currentFrame;
+                }
+                else
+                {
+                    Console.WriteLine("Error: ImageBoxFrameGrabber is null in FrameGrabber function.");
+                }
+
                 names = "";
                 // Clear the list(vector) of names
                 NamePersons.Clear();
