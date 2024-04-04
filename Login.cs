@@ -15,7 +15,7 @@ namespace MultiFaceRec
     public partial class Login : Form
     {
         Dashboard dash = new Dashboard();
-        MySqlConnection connection = new MySqlConnection("datasource = localhost;port = 3306; Initial Catalog = 'e_log1'; username = root; password=");
+        MySqlConnection connection = new MySqlConnection("datasource=localhost;port=3306;Initial Catalog='e_log1';username=root;password=");
         bool check;
         int loginAttempts = 0;
         DateTime cooldownEndTime;
@@ -43,24 +43,37 @@ namespace MultiFaceRec
                 }
                 else
                 {
-                    string querry = "Select Username, Password from security_tb";
-                    MySqlCommand cmd = new MySqlCommand(querry, connection);
-                    if (connection.State != ConnectionState.Open)
+                    string query = "SELECT Username, Password FROM security_tb";
+                    if (connection != null)
                     {
-                        connection.Open();
-                    }
-                    MySqlDataReader dr = cmd.ExecuteReader();
-                    while (dr.Read())
-                    {
-                        if (username_txbx.Text == (dr["Username"].ToString()) && password_txbx.Text == (dr["Password"].ToString()))
+                        MySqlCommand cmd = new MySqlCommand(query, connection);
+                        if (connection.State != ConnectionState.Open)
                         {
-                            check = true;
+                            connection.Open();
+                        }
+                        MySqlDataReader dr = cmd.ExecuteReader();
+                        if (username_txbx != null && password_txbx != null)
+                        {
+                            while (dr.Read())
+                            {
+                                if (username_txbx.Text == (dr["Username"].ToString()) && password_txbx.Text == (dr["Password"].ToString()))
+                                {
+                                    check = true;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            MessageBox.Show("Username or password text box is null.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         }
 
+                        dr.Close();
+                        connection.Close();
                     }
-
-                    dr.Close();
-                    connection.Close();
+                    else
+                    {
+                        MessageBox.Show("Database connection is null.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
                 }
 
                 if (check)
@@ -100,7 +113,7 @@ namespace MultiFaceRec
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("An error occurred: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
